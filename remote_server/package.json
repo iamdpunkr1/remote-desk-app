@@ -4,10 +4,10 @@
   "description": "remote desktop application backend",
   "main": "dist/index.js",
   "scripts": {
-    "start": "node dist/index.js",
-    "dev": "nodemon",
-    "build": "tsc"
-  },
+  "start": "nodemon",
+  "build": "tsc",
+  "test": "node index"
+},
   "author": "",
   "license": "ISC",
   "dependencies": {

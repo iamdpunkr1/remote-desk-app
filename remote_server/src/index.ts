@@ -10,7 +10,7 @@ configDotenv({
 });
 
 const PORT = 5000;
-const allowedOrigins = "*";
+const allowedOrigins = ["https://43ae-49-37-90-16.ngrok-free.app/", "http://localhost:5173"];
 const app: Application = express();
 
 const logs: string[] = [];
@@ -57,9 +57,9 @@ const io: SocketIOServer = new SocketIOServer(server, {
   }
 });
 
-const connections = io.of('/remote-ctrl');
 
-connections.on('connection', (socket: Socket) => {
+
+io.on('connection', (socket: Socket) => {
   addLog('USER Connection established');
 
   socket.on("electron-app", (data) => {

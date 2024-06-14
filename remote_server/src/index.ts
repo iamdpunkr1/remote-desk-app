@@ -10,7 +10,7 @@ configDotenv({
 });
 
 const PORT = 5000;
-const allowedOrigins = ["https://43ae-49-37-90-16.ngrok-free.app/", "http://localhost:5173"];
+const allowedOrigins = ["https://43ae-49-37-90-16.ngrok-free.app/", "http://localhost:5173", "https://remote-desk-app.vercel.app/"];
 const app: Application = express();
 
 const logs: string[] = [];

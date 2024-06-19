@@ -14,7 +14,10 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('electronAPI', {
       setSize: (size) => ipcRenderer.send('set-size', size),
       getScreenId: (callback) => ipcRenderer.on('SET_SOURCE_ID', callback),
-      getAvailableScreens: (callback) => ipcRenderer.on('AVAILABLE_SCREENS', callback)
+      getAvailableScreens: (callback) => ipcRenderer.on('AVAILABLE_SCREENS', callback),
+      sendMouseMove: (data) => ipcRenderer.send('mouse-move', data),
+      sendMouseClick: (data) => ipcRenderer.send('mouse-click', data),
+      sendKeyUp: (data) => ipcRenderer.send('key-up', data),
     });
   } catch (error) {
     console.error(error);

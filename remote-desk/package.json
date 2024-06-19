@@ -23,12 +23,14 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
+    "@hurdlegroup/robotjs": "^0.11.7",
     "cors": "^2.8.5",
     "electron-updater": "^6.1.7",
     "express": "^4.19.2",
     "http": "^0.0.1-security",
     "socket.io": "^4.7.5",
-    "socket.io-client": "^4.7.5"
+    "socket.io-client": "^4.7.5",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^2.0.0",

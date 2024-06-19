@@ -2,6 +2,9 @@ import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu } from 'elect
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
+import robot from "@hurdlegroup/robotjs"
+
+
 
 let availableScreens;
 let mainWindow;
@@ -11,7 +14,7 @@ const sendSelectedScreen = (item) => {
 };
 
 const createTray = () => {
-  console.log("Available Screens", availableScreens);
+  // console.log("Available Screens", availableScreens);
   const screensMenu = availableScreens.map(item => {
     return {
       label: item.name,
@@ -74,7 +77,7 @@ function createWindow(): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': ["default-src 'self'; connect-src http://localhost:5000; script-src 'self'; style-src 'self'"]
+        'Content-Security-Policy': ["default-src 'self'; connect-src http://localhost:5008; script-src 'self'; style-src 'self'"]
       }
     });
   });
@@ -117,6 +120,27 @@ app.whenReady().then(() => {
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  ipcMain.on('mouse-move', (event, data) => {
+    const { x, y } = data;
+    console.log("Mouse move", x, y)
+    robot.moveMouse(x, y);
+  });
+
+  ipcMain.on('mouse-click', (event, data) => {
+    const { x, y, button } = data;
+    console.log("Mouse click", x, y, button)
+    robot.moveMouse(x, y);
+    robot.mouseClick(button === 2 ? 'right' : 'left');
+  });
+
+  ipcMain.on('key-up', (event, data) => {
+    const { key } = data;
+    console.log("Key up", key)
+    robot.keyTap(key);
+  });
+
+
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common

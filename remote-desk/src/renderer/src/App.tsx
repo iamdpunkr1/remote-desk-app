@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import io from "socket.io-client";
 import { useRoom } from './context/RoomContext';
-
+import './App.css';
+import { v4 as uuidv4 } from 'uuid';
 declare global {
   interface Window {
     electronAPI: {
@@ -18,11 +19,13 @@ declare global {
 const App: React.FC = () => {
   const { roomId, setRoomId } = useRoom();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const socket = useMemo(() => io("http://localhost:5008"), []);
+  const socket = useMemo(() => io("https://alegralabs.com:5007"), []);
   const [availableScreens, setAvailableScreens] = useState<{ id: string, name: string }[]>([]);
   // const [roomId, setRoomId] = useState<string | null>(null);
   const [joinRoomId, setJoinRoomId] = useState<string>('');
   const [connectionState, setConnectionState] = useState<string>('disconnected');
+  // const [isSharing, setIsSharing] = useState<boolean>(false);
+  const [trackReceived, setTrackReceived] = useState<boolean>(false);
 
   const rtcPeerConnection = useRef<RTCPeerConnection | null>(new RTCPeerConnection({
     iceServers: [
@@ -79,6 +82,9 @@ const App: React.FC = () => {
 
   const handleTrack = (e: RTCTrackEvent) => {
     console.log('Track received:', e.streams[0]);
+    if(e.streams[0]){
+      setTrackReceived(true);
+    }
     if (videoRef.current) {
       console.log('Track received:', e.streams[0]);
       videoRef.current.srcObject = e.streams[0];
@@ -110,7 +116,7 @@ const App: React.FC = () => {
       setRoomId(roomId);
       // window.electronAPI.getScreenId((_, screenId) => {
       //   console.log('Renderer...', screenId);
-        getStream("screen:1:0", roomId);
+        getStream("screen:0:0", roomId);
       // });
     })
 
@@ -122,6 +128,8 @@ const App: React.FC = () => {
         .then(answer => {
           rtcPeerConnection.current?.setLocalDescription(answer);
           socket.emit("answer", JSON.stringify(answer), roomId);
+          // setIsSharing(s=>true);
+          // console.log("isSharing", isSharing);
         });
     });
 
@@ -181,10 +189,17 @@ const App: React.FC = () => {
     // }
   }
 
+    socket.on("user-left", () => {
+      console.log("User left");
+      handleDisconnect();
+    });
+
+    
     return () => {
       socket.close();
       rtcPeerConnection.current?.removeEventListener("track", handleTrack);
-      // rtcPeerConnection.current?.close();
+      rtcPeerConnection.current?.close();
+      rtcPeerConnection.current = null;
     };
   }, []);  
   // const switchScreen = (screenId: string) => {
@@ -204,6 +219,7 @@ const App: React.FC = () => {
     if (joinRoomId.trim()) {
       socket.emit("join-room", joinRoomId);
       setRoomId(joinRoomId);
+      // setIsSharing(false);
     }
   };
 
@@ -222,54 +238,166 @@ const App: React.FC = () => {
   //   setRoomId(null);
   // };
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    socket.emit("mouse-move",{ x: e.clientX, y: e.clientY }, roomId);
+    // console.log("Mouse Move")
+    if(connectionState === "connected"){
+      socket.emit("mouse-move",{ x: e.clientX, y: e.clientY,
+        clientWidth: window.innerWidth,
+        clientHeight: window.innerHeight }, roomId);
+    }
   };
 
   const handleMouseClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    socket.emit("mouse-click",{ x: e.clientX, y: e.clientY, button: e.button }, roomId);
+    if(connectionState === "connected") 
+      socket.emit("mouse-click",{ x: e.clientX, y: e.clientY, button: e.button }, roomId);
   };
 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    socket.emit("key-up",{ key: e.key, code: e.code }, roomId);
+    if(connectionState === "connected")
+      socket.emit("key-up",{ key: e.key, code: e.code }, roomId);
   };
 
-  return (
-    <div className="App">
-      { connectionState === "disconnected" && 
-        <>
-        <div>
-         {roomId &&  <h2>{roomId}</h2>}
-          <button onClick={handleCopyRoomId}>Copy Room ID</button>
-          {/* <button onClick={handleLeaveRoom}>Back</button> */}
-        </div>
-        
-        <div>
-          {/* <button onClick={handleCreateRoom}>
-            Share Screen
-          </button> */}
+  const handleDisconnect = () => {
 
-          <div>
-            <input
-              type="text"
-              value={joinRoomId}
-              onChange={(e) => setJoinRoomId(e.target.value)}
-              placeholder="Enter Room ID"
-            />
-            <button onClick={handleJoinRoom}>
-              Join Room
+    // Close the RTC peer connection
+    if (rtcPeerConnection.current) {
+      rtcPeerConnection.current.close();
+      rtcPeerConnection.current = null;
+    }
+  
+    // Reset connection state and any related states
+    setConnectionState('disconnected');
+    setTrackReceived(false);
+
+    const newRoomID = uuidv4().slice(0, 8);
+  
+    // Emit leave room event to the socket server if needed
+    socket.emit('leave-room', roomId);
+    setRoomId(newRoomID);
+    socket.emit('join-room', newRoomID);
+  };
+
+  
+
+
+  return (
+    <section className="flex flex-col justify-center items-center h-screen">
+    
+    {
+    connectionState === "disconnected" &&
+    <>
+
+      <div className="flex justify-center">
+        <div className='space-y-1'>
+        <h6 className='text-xs'>
+          Your ID
+        </h6>
+        <div className='flex justify-between border-solid border-2 border-gray-400 rounded-md flex gap-6 px-2 py-1 w-64'>
+            {roomId &&  <h2 className='text-sm'>{roomId}</h2>}
+            <button onClick={handleCopyRoomId} className='hover:scale-125'>
+              <span
+                style={{
+                  fontSize: ".675em",
+                  marginRight: ".125em",
+                  position: "relative",
+                  top: "-.25em",
+                  left: "-.125em"
+                }}
+              >
+                📄
+                <span style={{ position: "absolute", top: ".25em", left: ".25em" }}>📄</span>
+              </span>
             </button>
-          </div>
         </div>
+        </div>
+      </div>
       
-        </>
+      <div className="mt-6 space-y-1">
+        <h6 className='text-xs'>
+          Remote ID
+        </h6>
+        <div className='relative'>
+          <input
+            type="text"
+            value={joinRoomId}
+            onChange={(e) => setJoinRoomId(e.target.value)}
+            placeholder="Enter Remote ID"
+            className='focus:outline-none  focus:border-indigo-700 border-solid border-2 border-gray-400 rounded-md px-2 py-1 bg-trasparent w-64 text-sm'
+          />
+          <button onClick={handleJoinRoom} className='hover:bg-indigo-500 hover:border-indigo-500 bg-indigo-700 border-solid border-[2px] border-indigo-700 rounded-r-md px-2 py-1  absolute -right-1 top-0'>
+             <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              stroke="#fff"
+              viewBox="0 0 24 24"
+              className="w-5 h-5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="m11 16 4-4m0 0-4-4m4 4H3m1.516 5a9 9 0 1 0 0-10"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </>          
+    }
+
+    {
+      connectionState === "connecting" &&
+      <div>
+        Connecting...
+      </div>
+    }
+
+{
+      connectionState === "connected" && !trackReceived &&
+      <div>
+        <h6>Connected, Your screen is being shared</h6>
+        <button onClick={handleDisconnect}
+                   className=' bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
+                <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="#fff"
+                stroke="#fff"
+                viewBox="0 0 1024 1024"
+                className='w-5 h-5'
+              >
+                <path d="M195.2 195.2a64 64 0 0 1 90.496 0L512 421.504 738.304 195.2a64 64 0 0 1 90.496 90.496L602.496 512 828.8 738.304a64 64 0 0 1-90.496 90.496L512 602.496 285.696 828.8a64 64 0 0 1-90.496-90.496L421.504 512 195.2 285.696a64 64 0 0 1 0-90.496z" />
+              </svg>     
+      </button> 
+      </div>
+    }
+
+
+      {
+      // connectionState === "connecting" || trackReceived  &&
+      <div className='relative'  style={{display:`${ trackReceived ? "block" : "none"}`}} onMouseMove={handleMouseMove} onClick={handleMouseClick} onKeyUp={handleKeyUp} tabIndex={0}>
+        { 
+          connectionState === "connected" &&
+           <button onClick={handleDisconnect}
+                   className='absolute top-0 right-0 bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
+                <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="#fff"
+                stroke="#fff"
+                viewBox="0 0 1024 1024"
+                className='w-5 h-5'
+              >
+                <path d="M195.2 195.2a64 64 0 0 1 90.496 0L512 421.504 738.304 195.2a64 64 0 0 1 90.496 90.496L602.496 512 828.8 738.304a64 64 0 0 1-90.496 90.496L512 602.496 285.696 828.8a64 64 0 0 1-90.496-90.496L421.504 512 195.2 285.696a64 64 0 0 1 0-90.496z" />
+              </svg>     
+            </button> 
+        }   
+        <video ref={videoRef} className="video" style={{ width: "100%" }}>
+          video not available
+        </video>
+      </div>
       }
-      
-        <div style={{display:"block"}} onMouseMove={handleMouseMove} onClick={handleMouseClick} onKeyUp={handleKeyUp} tabIndex={0}>
-          <video ref={videoRef} className="video" style={{ maxWidth: "100%" }}>video not available</video>
-        </div>
-      
-    </div>
+  </section>
   );
 };
 
 export default App;
+
+

@@ -10,7 +10,7 @@ configDotenv({
 });
 
 const PORT = 5008;
-const allowedOrigins = ["https://e201-49-37-90-65.ngrok-free.app", "http://localhost:5173", "https://remote-desk-app.vercel.app/"];
+const allowedOrigins = ["https://remote-desk-web.vercel.app", "http://localhost:5173"];
 const app: Application = express();
 
 const logs: string[] = [];
@@ -53,7 +53,7 @@ const io: SocketIOServer = new SocketIOServer(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true
+    // credentials: true
   }
 });
 
@@ -115,6 +115,13 @@ io.on('connection', (socket: Socket) => {
     addLog(`Key up: ${data}`);
     socket.broadcast.to(roomId).emit('key-up', data);
   });
+
+  socket.on("leave-room", (roomId) => {
+    socket.leave(roomId);
+    addLog(`User left the room: ${roomId}`);
+    socket.broadcast.to(roomId).emit('user-left', roomId);
+  });
+
 
   socket.on('disconnect', () => {
     addLog('User disconnected');

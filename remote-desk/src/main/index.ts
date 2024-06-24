@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu } from 'electron';
+import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu, screen } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
@@ -8,7 +8,7 @@ import robot from "@hurdlegroup/robotjs"
 
 let availableScreens;
 let mainWindow;
-
+let selectedScreen;
 const sendSelectedScreen = (item) => {
   mainWindow.webContents.send('SET_SOURCE_ID', item.id);
 };
@@ -68,6 +68,9 @@ function createWindow(): void {
     mainWindow.show();
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       availableScreens = sources;
+      // console.log("Available Screens", availableScreens);
+      // selectedScreen = sources[0];
+      // console.log("seleted screen: ",sources[0].thumbnail.getSize())
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
       createTray();
     });
@@ -77,7 +80,7 @@ function createWindow(): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': ["default-src 'self'; connect-src http://localhost:5008; script-src 'self'; style-src 'self'"]
+        'Content-Security-Policy': ["default-src 'self'; connect-src https://alegralabs.com:5007; script-src 'self'; style-src 'self'"]
       }
     });
   });
@@ -102,6 +105,11 @@ function createWindow(): void {
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+  selectedScreen = primaryDisplay;
+
+  console.log(`Screen Size: ${width}x${height}`);
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -122,9 +130,16 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('mouse-move', (event, data) => {
-    const { x, y } = data;
-    console.log("Mouse move", x, y)
-    robot.moveMouse(x, y);
+    const { x, y,  clientWidth, clientHeight } = data;
+    // console.log("Mouse move", JSON.stringify(selectedScreen))
+    // const  { width, height }  = selectedScreen;
+    //     const ratioX = width / clientWidth
+    //     const ratioY = height / clientHeight
+
+        // const hostX = x * ratioX
+        // const hostY = y * ratioY
+
+        robot.moveMouse(x, y)
   });
 
   ipcMain.on('mouse-click', (event, data) => {
@@ -134,10 +149,33 @@ app.whenReady().then(() => {
     robot.mouseClick(button === 2 ? 'right' : 'left');
   });
 
-  ipcMain.on('key-up', (event, data) => {
+  ipcMain.on('key-up', (_, data) => {
     const { key } = data;
-    console.log("Key up", key)
-    robot.keyTap(key);
+    try{
+     // Map of special keys to their robotjs equivalents
+     const specialKeysMap = {
+      'Shift': 'shift',
+      'Enter': 'enter',
+      'Control': 'control',
+      'Alt': 'alt',
+      'Meta': 'command',
+      'Backspace': 'backspace',
+      'Delete': 'delete',
+      'ArrowUp': 'up',
+      'ArrowDown': 'down',
+      'ArrowLeft': 'left',
+      'ArrowRight': 'right',
+      'Tab': 'tab'
+    };
+
+    const robotKey = specialKeysMap[key] || key.toLowerCase();
+
+    robot.keyToggle(robotKey, 'down');
+    robot.keyToggle(robotKey, 'up');
+  
+    }catch(e){
+      console.log(e)
+    }
   });
 
 

@@ -12,8 +12,8 @@ const dotenv_1 = require("dotenv");
 (0, dotenv_1.configDotenv)({
     path: "./.env"
 });
-const PORT = 5000;
-const allowedOrigins = "*";
+const PORT = 5008;
+const allowedOrigins = ["https://remote-desk-web.vercel.app", "http://localhost:5173"];
 const app = (0, express_1.default)();
 const logs = [];
 function addLog(message) {
@@ -25,8 +25,7 @@ function addLog(message) {
 app.use((0, cors_1.default)({
     origin: allowedOrigins,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["X-Requested-With", "Content-Type"]
+    methods: ["GET", "POST"],
 }));
 app.use(express_1.default.json());
 app.use((0, cookie_parser_1.default)());
@@ -47,18 +46,18 @@ const io = new socket_io_1.Server(server, {
     cors: {
         origin: allowedOrigins,
         methods: ["GET", "POST"],
-        credentials: true
+        // credentials: true
     }
 });
-const connections = io.of('/remote-ctrl');
-connections.on('connection', (socket) => {
+io.on('connection', (socket) => {
     addLog('USER Connection established');
     socket.on("electron-app", (data) => {
         addLog(`Electron App text: ${data}`);
     });
-    socket.on("join-message", (roomId) => {
+    socket.on("join-room", (roomId) => {
         socket.join(roomId);
         addLog(`User joined in a room: ${roomId}`);
+        socket.broadcast.to(roomId).emit('user-joined', roomId);
     });
     socket.on("screen-data", function (data) {
         data = JSON.parse(data);
@@ -67,33 +66,38 @@ connections.on('connection', (socket) => {
         socket.broadcast.to(room).emit('screen-data', imgStr);
         addLog(`Screen data received for room: ${room}`);
     });
-    socket.on('offer', (sdp) => {
-        addLog('Routing offer');
-        socket.broadcast.emit('offer', sdp);
+    socket.on('offer', (sdp, roomId) => {
+        addLog('Routing offer' + roomId);
+        socket.broadcast.to(roomId).emit('offer', sdp, roomId);
     });
-    socket.on('answer', (sdp) => {
-        addLog('Routing answer');
-        socket.broadcast.emit('answer', sdp);
+    socket.on('answer', (sdp, roomId) => {
+        addLog('Routing answer ' + roomId);
+        socket.broadcast.to(roomId).emit('answer', sdp);
     });
-    socket.on('icecandidate', (icecandidate) => {
+    socket.on('icecandidate', (icecandidate, roomId) => {
         addLog('Routing ICE candidate');
-        socket.broadcast.emit('icecandidate', icecandidate);
+        socket.broadcast.to(roomId).emit('icecandidate', icecandidate);
     });
     socket.on('selectedScreen', (selectedScreen) => {
         addLog(`Selected screen: ${selectedScreen}`);
         socket.broadcast.emit('selectedScreen', selectedScreen);
     });
-    socket.on('mouse-move', (data) => {
+    socket.on('mouse-move', (data, roomId) => {
         addLog(`Mouse move: ${data}`);
-        socket.broadcast.emit('mouse-move', data);
+        socket.broadcast.to(roomId).emit('mouse-move', data);
     });
-    socket.on('mouse-click', (data) => {
+    socket.on('mouse-click', (data, roomId) => {
         addLog(`Mouse click: ${data}`);
-        socket.broadcast.emit('mouse-click', data);
+        socket.broadcast.to(roomId).emit('mouse-click', data);
     });
-    socket.on('key-up', (data) => {
+    socket.on('key-up', (data, roomId) => {
         addLog(`Key up: ${data}`);
-        socket.broadcast.emit('key-up', data);
+        socket.broadcast.to(roomId).emit('key-up', data);
+    });
+    socket.on("leave-room", (roomId) => {
+        socket.leave(roomId);
+        addLog(`User left the room: ${roomId}`);
+        socket.broadcast.to(roomId).emit('user-left', roomId);
     });
     socket.on('disconnect', () => {
         addLog('User disconnected');

@@ -2,13 +2,16 @@ import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu, screen } fro
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
-import robot from "@hurdlegroup/robotjs"
+import robot from "@tangjingchun/robotjs"
 
 
 
 let availableScreens;
 let mainWindow;
 let selectedScreen;
+let scaleFactor:number=1;
+
+
 const sendSelectedScreen = (item) => {
   mainWindow.webContents.send('SET_SOURCE_ID', item.id);
 };
@@ -43,8 +46,8 @@ const createTray = () => {
 function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 800,
+    height: 600,
     show: false,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -69,7 +72,8 @@ function createWindow(): void {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       availableScreens = sources;
       // console.log("Available Screens", availableScreens);
-      // selectedScreen = sources[0];
+      // selectedScreen = sources[0].thumbnail.getSize();
+
       // console.log("seleted screen: ",sources[0].thumbnail.getSize())
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
       createTray();
@@ -106,8 +110,14 @@ app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron');
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-  selectedScreen = primaryDisplay;
+  const { width, height } = primaryDisplay.size;
+  selectedScreen = primaryDisplay.size;
+  // console.log("Work Area: ", primaryDisplay.workArea);
+  // console.log("Bounds: ", primaryDisplay.bounds);
+  // console.log("Scale Factor: ", primaryDisplay.scaleFactor);
+  // scaleFactor = primaryDisplay.scaleFactor;
+  // console.log("Size: ", primaryDisplay.size);
+  // console.log("Work Area Size: ", primaryDisplay.workAreaSize);
 
   console.log(`Screen Size: ${width}x${height}`);
 
@@ -129,23 +139,31 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
-  ipcMain.on('mouse-move', (event, data) => {
+  ipcMain.on('mouse-move', (_, data) => {
+    // console.log("===Mouse-MOVE===");
     const { x, y,  clientWidth, clientHeight } = data;
-    // console.log("Mouse move", JSON.stringify(selectedScreen))
-    // const  { width, height }  = selectedScreen;
-    //     const ratioX = width / clientWidth
-    //     const ratioY = height / clientHeight
+    // console.log("Remote screen: ",clientWidth, clientHeight)
+    let  { width, height }  = selectedScreen;
+    // console.log("Local screen: ", width, height)
+    // const ratioX = width / clientWidth;
+    // const ratioY = height / clientHeight;
+    width = width * scaleFactor;
+    height = height * scaleFactor;
+    // console.log("After Scale: Local screen: ", width, height)
+    const adjustedX = Math.round(x * 1920);
+    const adjustedY = Math.round(y * 1080);
+    // console.log("recieved X & Y ", x, y);
+    // console.log("adjusted X & Y ", adjustedX, adjustedY);
+    robot.moveMouse(adjustedX, adjustedY);
+    // console.log("===Mouse-MOVE===")
 
-        // const hostX = x * ratioX
-        // const hostY = y * ratioY
-
-        robot.moveMouse(x, y)
+        // robot.moveMouse(x, y)
   });
 
   ipcMain.on('mouse-click', (event, data) => {
     const { x, y, button } = data;
     console.log("Mouse click", x, y, button)
-    robot.moveMouse(x, y);
+    // robot.moveMouse(x, y);
     robot.mouseClick(button === 2 ? 'right' : 'left');
   });
 
@@ -169,9 +187,8 @@ app.whenReady().then(() => {
     };
 
     const robotKey = specialKeysMap[key] || key.toLowerCase();
-
-    robot.keyToggle(robotKey, 'down');
-    robot.keyToggle(robotKey, 'up');
+    robot.keyTap(robotKey);
+   // robot.keyToggle(robotKey, 'up');
   
     }catch(e){
       console.log(e)

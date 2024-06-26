@@ -98,18 +98,20 @@ const App: React.FC = () => {
   useEffect(() => {
 
     console.log("Room ID:", roomId);
-    socket.emit("join-room", roomId);
+    // socket.emit("join-room", roomId);
     socket.on("connect", () => {
       console.log("Connected to server");
+      socket.emit("join-room", roomId);
+      socket.emit("electron-app", "Hello from Electron App");
     });
 
-    socket.emit("electron-app", "Hello from Electron App");
-
+    
 
 
     // Listen for available screens from the main process
     window.electronAPI.getAvailableScreens((_, screens) => {
       setAvailableScreens(screens);
+    
     });
 
     socket.on("user-joined", (roomId)=>{
@@ -143,6 +145,7 @@ const App: React.FC = () => {
       console.log('ICE Candidate received:', candidate);
       rtcPeerConnection.current?.addIceCandidate(new RTCIceCandidate(JSON.parse(candidate)));
     });
+    
 
     socket.on("mouse-move", (data) => {
       console.log("Mouse move: ", data);
@@ -239,10 +242,17 @@ const App: React.FC = () => {
   // };
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     // console.log("Mouse Move")
-    if(connectionState === "connected"){
-      socket.emit("mouse-move",{ x: e.clientX, y: e.clientY,
-        clientWidth: window.innerWidth,
-        clientHeight: window.innerHeight }, roomId);
+    if(connectionState === "connected" && videoRef.current){
+      const videoRect = videoRef.current.getBoundingClientRect();
+      const relativeX = (e.clientX - videoRect.left) / videoRect.width;
+      const relativeY = (e.clientY - videoRect.top) / videoRect.height;
+      
+      socket.emit("mouse-move", {
+        x: relativeX,
+        y: relativeY,
+        clientWidth: videoRect.width,
+        clientHeight: videoRect.height
+      }, roomId);
     }
   };
 
@@ -262,6 +272,13 @@ const App: React.FC = () => {
     if (rtcPeerConnection.current) {
       rtcPeerConnection.current.close();
       rtcPeerConnection.current = null;
+      // rtcPeerConnection.current = new RTCPeerConnection({
+      //   iceServers: [
+      //     { urls: 'stun:stun1.l.google.com:19302' },
+      //     { urls: 'stun:stun3.l.google.com:19302' },
+      //     { urls: 'stun:stun4.l.google.com:19302' }
+      //   ],
+      // }) 
     }
   
     // Reset connection state and any related states
@@ -321,7 +338,7 @@ const App: React.FC = () => {
             value={joinRoomId}
             onChange={(e) => setJoinRoomId(e.target.value)}
             placeholder="Enter Remote ID"
-            className='focus:outline-none  focus:border-indigo-700 border-solid border-2 border-gray-400 rounded-md px-2 py-1 bg-trasparent w-64 text-sm'
+            className='focus:outline-none  text-indigo-600 focus:border-indigo-700 border-solid border-2 border-gray-400 rounded-md px-2 py-1 bg-trasparent w-64 text-sm'
           />
           <button onClick={handleJoinRoom} className='hover:bg-indigo-500 hover:border-indigo-500 bg-indigo-700 border-solid border-[2px] border-indigo-700 rounded-r-md px-2 py-1  absolute -right-1 top-0'>
              <svg

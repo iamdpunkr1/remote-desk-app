@@ -18,6 +18,8 @@ if (process.contextIsolated) {
       sendMouseMove: (data) => ipcRenderer.send('mouse-move', data),
       sendMouseClick: (data) => ipcRenderer.send('mouse-click', data),
       sendKeyUp: (data) => ipcRenderer.send('key-up', data),
+      sendScreenChange: (data:string) => ipcRenderer.send('screen-change', data),
+      sendMouseScroll: (data) => ipcRenderer.send('mouse-scroll', data),
     });
   } catch (error) {
     console.error(error);

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu, screen } fro
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
-import robot from "@tangjingchun/robotjs"
+import robot from "@hurdlegroup/robotjs"
 
 
 
@@ -10,7 +10,7 @@ let availableScreens;
 let mainWindow;
 let selectedScreen;
 let scaleFactor:number=1;
-
+let nativeOrigin = { x: 0, y: 0 };
 
 const sendSelectedScreen = (item) => {
   mainWindow.webContents.send('SET_SOURCE_ID', item.id);
@@ -42,7 +42,6 @@ const createTray = () => {
 
   Menu.setApplicationMenu(menu);
 };
-
 function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -71,11 +70,13 @@ function createWindow(): void {
     mainWindow.show();
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       availableScreens = sources;
+      // console.log("Sources: ", sources);
+
       // console.log("Available Screens", availableScreens);
       // selectedScreen = sources[0].thumbnail.getSize();
-
+      
       // console.log("seleted screen: ",sources[0].thumbnail.getSize())
-      mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
+      mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name, display_id: source.display_id})));
       createTray();
     });
   });
@@ -112,12 +113,35 @@ app.whenReady().then(() => {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.size;
   selectedScreen = primaryDisplay.size;
-  // console.log("Work Area: ", primaryDisplay.workArea);
-  // console.log("Bounds: ", primaryDisplay.bounds);
-  // console.log("Scale Factor: ", primaryDisplay.scaleFactor);
-  // scaleFactor = primaryDisplay.scaleFactor;
-  // console.log("Size: ", primaryDisplay.size);
-  // console.log("Work Area Size: ", primaryDisplay.workAreaSize);
+  const displays = screen.getAllDisplays();
+  console.log("Total Displays: ", displays);
+
+  screen.on('display-added', (e) => {
+    console.log("Display added: ", e);
+    const displays = screen.getAllDisplays();
+    console.log("Total Displays: ", displays.length);
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      availableScreens = sources;
+      mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
+      createTray();
+    } );
+  } )
+
+  screen.on('display-removed', (e) => {
+    console.log("Display removed: ", e);
+    const displays = screen.getAllDisplays();
+    console.log("Total Displays: ", displays.length);
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      availableScreens = sources;
+      mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
+      createTray();
+    } );
+    
+  } )
+
+  scaleFactor = primaryDisplay.scaleFactor;
+  nativeOrigin = primaryDisplay.nativeOrigin;
+
 
   console.log(`Screen Size: ${width}x${height}`);
 
@@ -140,27 +164,32 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('mouse-move', (_, data) => {
-    // console.log("===Mouse-MOVE===");
-    const { x, y,  clientWidth, clientHeight } = data;
+    console.log("===Mouse-MOVE===");
+    const { x:cx, y:cy } = data;
     // console.log("Remote screen: ",clientWidth, clientHeight)
     let  { width, height }  = selectedScreen;
+    console.log("Selected Screen: ", width, height, scaleFactor)
     // console.log("Local screen: ", width, height)
     // const ratioX = width / clientWidth;
     // const ratioY = height / clientHeight;
     width = width * scaleFactor;
     height = height * scaleFactor;
+    console.log("Selected Screen: multiplying scalefactor ", width, height, scaleFactor)
+
     // console.log("After Scale: Local screen: ", width, height)
-    const adjustedX = Math.round(x * 1920);
-    const adjustedY = Math.round(y * 1080);
+    const adjustedX =  Math.round(cx * width);
+    const adjustedY = Math.round(cy * height);
+    const x = adjustedX + nativeOrigin.x;
+    const y = adjustedY + nativeOrigin.y;
     // console.log("recieved X & Y ", x, y);
     // console.log("adjusted X & Y ", adjustedX, adjustedY);
-    robot.moveMouse(adjustedX, adjustedY);
-    // console.log("===Mouse-MOVE===")
+    robot.moveMouseSmooth(x, y);
+    console.log("===Mouse-MOVE===")
 
         // robot.moveMouse(x, y)
   });
 
-  ipcMain.on('mouse-click', (event, data) => {
+  ipcMain.on('mouse-click', (_, data) => {
     const { x, y, button } = data;
     console.log("Mouse click", x, y, button)
     // robot.moveMouse(x, y);
@@ -168,7 +197,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('key-up', (_, data) => {
-    const { key } = data;
+    const { key, code:modifier } = data;
     try{
      // Map of special keys to their robotjs equivalents
      const specialKeysMap = {
@@ -187,15 +216,31 @@ app.whenReady().then(() => {
     };
 
     const robotKey = specialKeysMap[key] || key.toLowerCase();
-    robot.keyTap(robotKey);
-   // robot.keyToggle(robotKey, 'up');
+    // robot.keyTap(robotKey);
+    robot.keyToggle(robotKey, 'down', modifier);
+    robot.keyToggle(robotKey, 'up', modifier);
   
     }catch(e){
       console.log(e)
     }
   });
 
+  ipcMain.on("screen-change", (_, data) => {
+    console.log("Screen Change from FR: ", data)
+    screen.getAllDisplays().forEach(display => {
+      if (display.id == data) {
+        selectedScreen = display.size;
+        scaleFactor = display.scaleFactor;
+        nativeOrigin = display.nativeOrigin;
+        console.log("Selected Screen: ", selectedScreen);
+      }
+    });
+  })
 
+  ipcMain.on('mouse-scroll', (_, data) => {
+    const { deltaX, deltaY} = data;
+    robot.scrollMouse(deltaX, deltaY);
+  });
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common

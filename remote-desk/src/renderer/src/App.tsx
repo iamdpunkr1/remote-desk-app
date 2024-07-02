@@ -3,35 +3,67 @@ import io from "socket.io-client";
 import { useRoom } from './context/RoomContext';
 import './App.css';
 import { v4 as uuidv4 } from 'uuid';
+
 declare global {
   interface Window {
     electronAPI: {
       getScreenId: (callback: (event: any, screenId: string) => void) => void;
       setSize: ({ width, height }: { width: number; height: number }) => void;
-      getAvailableScreens: (callback: (event: any, screens: { id: string, name: string }[]) => void) => void;
+      getAvailableScreens: (callback: (event: any, screens: screenType[]) => void) => void;
       sendMouseMove: (data: { x: number, y: number }) => void;
       sendMouseClick: (data: { x: number, y: number, button: number }) => void;
       sendKeyUp: (data: { key: string, code: string }) => void;
+      sendScreenChange: (data: string) => void;
     };
   }
+}
+
+type screenType = {
+  id:string,
+  name:string,
+  display_id:string
+}
+
+const modiferCheckers = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const modifier:string[] = [];
+  if (e.ctrlKey) {
+    modifier.push("control");
+  }
+  if (e.altKey) {
+    modifier.push("alt");
+  }
+  if (e.shiftKey) {
+    modifier.push("shift");
+  }
+  if (e.metaKey) {
+    modifier.push("Meta");
+  }
+  return modifier;
 }
 
 const App: React.FC = () => {
   const { roomId, setRoomId } = useRoom();
   const videoRef = useRef<HTMLVideoElement>(null);
   const socket = useMemo(() => io("https://alegralabs.com:5007"), []);
-  const [availableScreens, setAvailableScreens] = useState<{ id: string, name: string }[]>([]);
+  // const [availableScreens, setAvailableScreens] = useState<{ id: string, name: string }[]>([]);
+  const availableScreensRef = useRef<screenType[]>([]);
+  const [screensRecieved, setScreensRecieved] =  useState<screenType[]>([]);
+  const [selectedScreen, setSelectedScreen] = useState<string>("");
   // const [roomId, setRoomId] = useState<string | null>(null);
   const [joinRoomId, setJoinRoomId] = useState<string>('');
   const [connectionState, setConnectionState] = useState<string>('disconnected');
   // const [isSharing, setIsSharing] = useState<boolean>(false);
   const [trackReceived, setTrackReceived] = useState<boolean>(false);
 
+
   const rtcPeerConnection = useRef<RTCPeerConnection | null>(new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
+      {
+        urls: 'turn:freestun.net:3479',
+        username: 'free',
+        credential: 'free',
+      }   
     ],
   }) as RTCPeerConnection);
 
@@ -68,8 +100,8 @@ const App: React.FC = () => {
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: screenId,
-          } as any, // Add this line to avoid TypeScript error
-        }
+          } 
+        }as any
       });
 
       handleStream(stream, roomId);
@@ -95,7 +127,45 @@ const App: React.FC = () => {
   }     
 
 
+
+  const createPeerConnection = () => {
+    const newPeerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun1.l.google.com:19302' },
+        {
+          urls: 'turn:freestun.net:3479',
+          username: 'free',
+          credential: 'free',
+        }
+      ],
+    });
+
+    newPeerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', { candidate: event.candidate, roomId });
+      }
+    };
+
+    newPeerConnection.ontrack = (event) => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = event.streams[0];
+      }
+      setTrackReceived(true);
+    };
+
+    newPeerConnection.onconnectionstatechange = () => {
+      setConnectionState(newPeerConnection.connectionState);
+    };
+
+    rtcPeerConnection.current = newPeerConnection;
+    return newPeerConnection;
+  };
+
   useEffect(() => {
+
+      // window.electronAPI.getScreenId((_, screenId) => {
+      //   console.log('Renderer...', screenId);
+      // });
 
     console.log("Room ID:", roomId);
     // socket.emit("join-room", roomId);
@@ -110,17 +180,32 @@ const App: React.FC = () => {
 
     // Listen for available screens from the main process
     window.electronAPI.getAvailableScreens((_, screens) => {
-      setAvailableScreens(screens);
-    
+      console.log('Available screens: ', screens.length);
+      console.log("Room ID:", roomId);
+      console.log("Connection State:", connectionState);
+
+      availableScreensRef.current = screens;
+      setSelectedScreen(screens[0].id);
+      if(screens.length > 0 && roomId){
+        console.log("Available screens emitted to SOCKET: ", screens);
+         socket.emit("available-screens", screens, roomId);
+      }
     });
 
-    socket.on("user-joined", (roomId)=>{
+    socket.on("user-joined",async (roomId)=>{
       setRoomId(roomId);
       // window.electronAPI.getScreenId((_, screenId) => {
       //   console.log('Renderer...', screenId);
-        getStream("screen:0:0", roomId);
+    console.log("availableScreens", availableScreensRef.current);
+    if (availableScreensRef.current.length > 0) {
+      console.log("screen id: ", availableScreensRef.current[0].id);
+      getStream(availableScreensRef.current[0].id, roomId);
+    } else {
+      console.log("No available screens");
+    }
       // });
     })
+
 
     socket.on("offer", async (sdp: string, roomId:string) => {
       console.log('Offer received:', sdp);
@@ -139,13 +224,29 @@ const App: React.FC = () => {
       console.log('Answer received:', sdp);
       const answer = new RTCSessionDescription(JSON.parse(sdp));
       rtcPeerConnection.current?.setRemoteDescription(answer);
+      if(availableScreensRef.current.length > 1){
+      socket.emit("available-screens", availableScreensRef.current, roomId);
+      }
     });
+
+    socket.on("available-screens", (screens: screenType[]) => {
+      console.log('Screens recieved: ', screens);
+      setScreensRecieved(screens);
+    } );
 
     socket.on('icecandidate', (candidate: string) => {
       console.log('ICE Candidate received:', candidate);
       rtcPeerConnection.current?.addIceCandidate(new RTCIceCandidate(JSON.parse(candidate)));
     });
-    
+
+
+    socket.on("screen-change", (screen: screenType) => {
+      console.log('Screen change:', screen);
+      if(roomId){
+        getStream(screen.id, roomId);
+        window.electronAPI.sendScreenChange(screen.display_id);
+      }
+    });
 
     socket.on("mouse-move", (data) => {
       console.log("Mouse move: ", data);
@@ -170,11 +271,10 @@ const App: React.FC = () => {
         }
       };
 
-      rtcPeerConnection.current.onconnectionstatechange = (e) => {
+      rtcPeerConnection.current.onconnectionstatechange = (_) => {
         console.log('Connection state', rtcPeerConnection.current?.connectionState);
         setConnectionState(rtcPeerConnection.current?.connectionState || 'disconnected');
       };
-   
 
     rtcPeerConnection.current.addEventListener("track", handleTrack);
 
@@ -204,7 +304,10 @@ const App: React.FC = () => {
       rtcPeerConnection.current?.close();
       rtcPeerConnection.current = null;
     };
-  }, []);  
+  }, []); 
+  
+  
+ 
   // const switchScreen = (screenId: string) => {
   //   getStream(screenId);
   // };
@@ -249,9 +352,7 @@ const App: React.FC = () => {
       
       socket.emit("mouse-move", {
         x: relativeX,
-        y: relativeY,
-        clientWidth: videoRect.width,
-        clientHeight: videoRect.height
+        y: relativeY
       }, roomId);
     }
   };
@@ -261,9 +362,15 @@ const App: React.FC = () => {
       socket.emit("mouse-click",{ x: e.clientX, y: e.clientY, button: e.button }, roomId);
   };
 
+
   const handleKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if(connectionState === "connected")
-      socket.emit("key-up",{ key: e.key, code: e.code }, roomId);
+    if(connectionState === "connected"){
+      // console.log("Key up", e);
+      const modifier = modiferCheckers(e);
+      console.log("Modifers:  ", modifier);
+
+      socket.emit("key-up",{ key: e.key, code: modifier }, roomId);
+    }
   };
 
   const handleDisconnect = () => {
@@ -272,6 +379,7 @@ const App: React.FC = () => {
     if (rtcPeerConnection.current) {
       rtcPeerConnection.current.close();
       rtcPeerConnection.current = null;
+      createPeerConnection();
       // rtcPeerConnection.current = new RTCPeerConnection({
       //   iceServers: [
       //     { urls: 'stun:stun1.l.google.com:19302' },
@@ -293,12 +401,43 @@ const App: React.FC = () => {
     socket.emit('join-room', newRoomID);
   };
 
+  const handleScreenChange = (screen:screenType, roomId: string | null) => {
+    console.log("Screen change emmited: ", screen, roomId);
+    socket.emit("screen-change", screen, roomId);
+    setSelectedScreen(screen.id);
+  }
   
 
 
   return (
     <section className="flex flex-col justify-center items-center h-screen">
-    
+    {
+      connectionState === "failed" &&
+      <div className='space-x-2'>
+        Connection failed 
+        <button onClick={handleJoinRoom} className='bg-indigo-500 hover:bg-indigo-700 text-white px-2 py-1 rounded-md mr-2'>
+          Retry
+        </button>
+        
+      </div>
+    }
+    {
+      screensRecieved.length > 1 && connectionState === "connected" &&
+      <div className="space-y-1">
+        <h6 className='text-xs'>
+          Select Screen
+        </h6>
+        <div className='flex gap-2'>
+          {
+            screensRecieved.map(screen => (
+              <button key={screen.id} onClick={() => handleScreenChange(screen, roomId)} className={` ${selectedScreen === screen.id? "bg-indigo-600": "bg-indigo-400"}  hover:bg-indigo-800 text-white px-2 py-1 rounded-md`}>
+                {screen.name}
+              </button>
+            ))
+          }
+        </div>
+    </div>
+    }
     {
     connectionState === "disconnected" &&
     <>
@@ -373,7 +512,7 @@ const App: React.FC = () => {
       <div>
         <h6>Connected, Your screen is being shared</h6>
         <button onClick={handleDisconnect}
-                   className=' bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
+                className=' bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
                 <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="#fff"

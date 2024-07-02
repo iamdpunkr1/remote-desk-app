@@ -78,10 +78,18 @@ io.on('connection', (socket) => {
         addLog('Routing ICE candidate');
         socket.broadcast.to(roomId).emit('icecandidate', icecandidate);
     });
-    socket.on('selectedScreen', (selectedScreen) => {
-        addLog(`Selected screen: ${selectedScreen}`);
-        socket.broadcast.emit('selectedScreen', selectedScreen);
+    socket.on("available-screens", (screens, roomId) => {
+        addLog(`Available screens: ${screens}`);
+        socket.broadcast.to(roomId).emit('available-screens', screens);
     });
+    socket.on("screen-change", (selectedScreen, roomId) => {
+        addLog(`Selected screen: ${selectedScreen}`);
+        socket.broadcast.to(roomId).emit('screen-change', selectedScreen);
+    });
+    // socket.on('selectedScreen', (selectedScreen) => {
+    //   addLog(`Selected screen: ${selectedScreen}`);
+    //   socket.broadcast.emit('selectedScreen', selectedScreen);
+    // });
     socket.on('mouse-move', (data, roomId) => {
         addLog(`Mouse move: ${data}`);
         socket.broadcast.to(roomId).emit('mouse-move', data);
@@ -89,6 +97,10 @@ io.on('connection', (socket) => {
     socket.on('mouse-click', (data, roomId) => {
         addLog(`Mouse click: ${data}`);
         socket.broadcast.to(roomId).emit('mouse-click', data);
+    });
+    socket.on('mouse-scroll', (data, roomId) => {
+        addLog(`Mouse scroll: ${data}`);
+        socket.broadcast.to(roomId).emit('mouse-scroll', data);
     });
     socket.on('key-up', (data, roomId) => {
         addLog(`Key up: ${data}`);

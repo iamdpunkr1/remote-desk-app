@@ -22,6 +22,12 @@ if (process.contextIsolated) {
       sendMouseScroll: (data) => ipcRenderer.send('mouse-scroll', data),
       sendMouseDown: (data) => ipcRenderer.send('mouse-down', data),
       sendMouseUp: (data) => ipcRenderer.send('mouse-up', data),
+      // Add these new methods
+      onAppClosing: (callback) => ipcRenderer.on('app-closing', callback),
+      onPerformDisconnect: (callback) => ipcRenderer.on('perform-disconnect', callback),
+      onQuitCancelled: (callback) => ipcRenderer.on('quit-cancelled', callback),
+      sendConfirmQuit: (hasActiveConnection) => ipcRenderer.send('confirm-quit', hasActiveConnection),
+      sendQuitApp: () => ipcRenderer.send('quit-app'),
     });
   } catch (error) {
     console.error(error);

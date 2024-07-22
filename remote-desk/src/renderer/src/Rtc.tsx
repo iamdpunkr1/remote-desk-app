@@ -9,9 +9,9 @@ import { v4 as uuidv4 } from 'uuid';
 declare global {
   interface Window {
     electronAPI: {
+      setSize: (size: { width: number; height: number }) => void;
       getScreenId: (callback: (event: any, screenId: string) => void) => void;
-      setSize: ({ width, height }: { width: number; height: number }) => void;
-      getAvailableScreens: (callback: (event: any, screens: screenType[]) => void) => void;
+      getAvailableScreens: (callback: (event: any, screens: any[]) => void) => void;
       sendMouseMove: (data: { x: number, y: number }) => void;
       sendMouseClick: (data: { x: number, y: number, button: number }) => void;
       sendKeyUp: (data: { key: string, code: string }) => void;
@@ -19,7 +19,11 @@ declare global {
       sendMouseScroll: (data: { deltaX: number, deltaY: number }) => void;
       sendMouseDown: (data: boolean) => void;
       sendMouseUp: (data: boolean) => void;
-
+      onAppClosing: (callback: () => void) => void;
+      onPerformDisconnect: (callback: () => void) => void;
+      onQuitCancelled: (callback: () => void) => void;
+      sendConfirmQuit: (hasActiveConnection: boolean) => void;
+      sendQuitApp: () => void;
     };
   }
 }
@@ -60,7 +64,9 @@ const Rtc: React.FC = () => {
   const dataChannel = useRef<RTCDataChannel | null>(null);
   const [videoRects, setVideoRects] = useState<DOMRect | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [isQuitting, setIsQuitting] = useState<boolean>(false);
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const joinedRoomId = useRef<string | null>(null);
 
   // iceServers: [{"urls":"stun:stun.relay.metered.ca:80"},{"urls":"turn:global.relay.metered.ca:80","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turn:global.relay.metered.ca:80?transport=tcp","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turn:global.relay.metered.ca:443","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turns:global.relay.metered.ca:443?transport=tcp","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"}],
 
@@ -161,8 +167,10 @@ const Rtc: React.FC = () => {
       videoRef.current.srcObject = e.streams[0];
       videoRef.current.onloadedmetadata = () => {
         videoRef.current?.play();
-      };
+        console.log("Video playing");
       setLoading(false);
+
+      };
       setRoomId(joinRoomId);
     }
 
@@ -180,8 +188,8 @@ const Rtc: React.FC = () => {
           credential: 'free',
         }
       ],
-      // iceTransportPolicy: 'all',
-      // iceCandidatePoolSize: 10
+      iceTransportPolicy: 'all',
+      iceCandidatePoolSize: 10
     });
   
     newPeerConnection.onicecandidate = (event) => {
@@ -195,10 +203,10 @@ const Rtc: React.FC = () => {
     newPeerConnection.onconnectionstatechange = () => {
       setConnectionState(newPeerConnection.connectionState);
       console.log('ICE connection state:', newPeerConnection.iceConnectionState);
-      // if (newPeerConnection.iceConnectionState === 'failed') {
-      //   // Trigger ICE restart
-      //   newPeerConnection.restartIce();
-      // }
+      if (newPeerConnection.iceConnectionState === 'failed') {
+        // Trigger ICE restart
+        newPeerConnection.restartIce();
+      }
     };
   
     newPeerConnection.ondatachannel = (event) => {
@@ -209,9 +217,53 @@ const Rtc: React.FC = () => {
     return newPeerConnection;
   };
 
+
+  const gatherIceCandidates = (peerConnection: RTCPeerConnection, timeout = 5000) => {
+    return new Promise<void>((resolve) => {
+      const candidates: RTCIceCandidate[] = [];
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          candidates.push(event.candidate);
+        } else {
+          resolve();
+        }
+      };
+  
+      setTimeout(resolve, timeout);
+    });
+  };
+
+  const handleAppClosing = () => {
+    console.log("App closing event received");
+    setIsQuitting(true);
+    const hasActiveConnection = videoRef.current?.srcObject !== null;
+    // console.log("Connection state: ", ); 
+    // console.log("Has active connection: ", hasActiveConnection);
+    window.electronAPI.sendConfirmQuit(hasActiveConnection);
+  };
+
+  const handleForcedDisconnect = async () => {
+ 
+    // await handleDisconnect();
+    socket.emit('leave-room', joinedRoomId.current);
+    // setTimeout(() => {
+    //   window.electronAPI.sendQuitApp();
+    // }, 2000);
+    window.electronAPI.sendQuitApp();
+  };
+
   useEffect(() => {
 
     rtcPeerConnection.current = createPeerConnection();
+
+      // Listen for app closing event
+    window.electronAPI.onAppClosing(handleAppClosing);
+
+    // Listen for disconnect request
+    window.electronAPI.onPerformDisconnect(handleForcedDisconnect);
+
+    // Listen for quit cancelled event
+    window.electronAPI.onQuitCancelled(() => setIsQuitting(false));
 
     // console.log("SUpported Constraints: ",navigator.mediaDevices.getSupportedConstraints())
 
@@ -294,8 +346,11 @@ const Rtc: React.FC = () => {
     } );
 
     socket.on('icecandidate', (candidate: string) => {
-      console.log('ICE Candidate received:', candidate);
-      rtcPeerConnection.current?.addIceCandidate(new RTCIceCandidate(JSON.parse(candidate)));
+      // console.log('ICE Candidate received:', candidate);
+      // rtcPeerConnection.current?.addIceCandidate(new RTCIceCandidate(JSON.parse(candidate)));
+      const iceCandidate = new RTCIceCandidate(JSON.parse(candidate));
+      rtcPeerConnection.current?.addIceCandidate(iceCandidate)
+       .catch(e => console.error('Error adding received ice candidate', e));
     });
 
 
@@ -344,10 +399,11 @@ const Rtc: React.FC = () => {
 
     
     return () => {
+      //  socket.emit('leave-room', roomId);
+      //  socket.close();
       socket.close();
+      
       // rtcPeerConnection.current?.removeEventListener("track", handleTrack);
-      rtcPeerConnection.current?.close();
-      rtcPeerConnection.current = null;
       if (debounceTimeout.current) {
         clearTimeout(debounceTimeout.current);
       }
@@ -450,26 +506,63 @@ const Rtc: React.FC = () => {
   //   }
     
   // };
-  const handleJoinRoom = () => {
-    setLoading(true);
-    if (joinRoomId.trim()) {
-      // If there's an existing connection, close it
-      if (rtcPeerConnection.current) {
-        rtcPeerConnection.current.close();
-      }
-      
-      // Create a new peer connection
-      rtcPeerConnection.current = createPeerConnection();
-      
-      // Create a new data channel
-      dataChannel.current = rtcPeerConnection.current.createDataChannel("dataChannel");
-      dataChannel.current.onopen = () => {
-        console.log('Data channel is open');
-      };
-      dataChannel.current.onmessage = handleDataChannelMessage;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 2000;
   
-      // Join the room
-      socket.emit("join-room", joinRoomId);
+  const handleJoinRoom = async (retryCount = 0) => {
+    setLoading(true);
+    console.log("Join Room ID: ", joinRoomId);
+    joinedRoomId.current = joinRoomId;
+    if (joinRoomId.trim()) {
+      try {
+        if (rtcPeerConnection.current) {
+          rtcPeerConnection.current.close();
+        }
+        
+        rtcPeerConnection.current = createPeerConnection();
+        
+        dataChannel.current = rtcPeerConnection.current.createDataChannel("dataChannel");
+        dataChannel.current.onopen = () => {
+          console.log('Data channel is open');
+        };
+        dataChannel.current.onmessage = handleDataChannelMessage;
+  
+        socket.emit("join-room", joinRoomId);
+  
+        // Wait for ICE candidates to be gathered
+        await gatherIceCandidates(rtcPeerConnection.current);
+  
+        const offer = await rtcPeerConnection.current.createOffer();
+        await rtcPeerConnection.current.setLocalDescription(offer);
+  
+        socket.emit("offer", JSON.stringify(offer), joinRoomId);
+  
+        // Wait for the connection to be established
+        await new Promise<void>((resolve, reject) => {
+          const checkState = () => {
+            if (rtcPeerConnection.current?.connectionState === 'connected') {
+              resolve();
+            } else if (rtcPeerConnection.current?.connectionState === 'failed') {
+              reject(new Error('Connection failed'));
+            } else {
+              setTimeout(checkState, 1000);
+            }
+          };
+          checkState();
+        });
+  
+        // setLoading(false);
+        setRoomId(joinRoomId);
+      } catch (error) {
+        console.error('Connection error:', error);
+        if (retryCount < MAX_RETRIES) {
+          console.log(`Retrying... Attempt ${retryCount + 1} of ${MAX_RETRIES}`);
+          setTimeout(() => handleJoinRoom(retryCount + 1), RETRY_DELAY);
+        } else {
+          setLoading(false);
+          console.error('Max retries reached. Connection failed.');
+        }
+      }
     }
   };
 
@@ -577,7 +670,7 @@ const Rtc: React.FC = () => {
   //   setRoomId(newRoomID);
   //   socket.emit('join-room', newRoomID);
   // };
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     // Close the existing RTC peer connection
     if (rtcPeerConnection.current) {
       rtcPeerConnection.current.close();
@@ -622,12 +715,16 @@ const Rtc: React.FC = () => {
 
   return (
     <section className="flex flex-col justify-center items-center h-screen">
+      <span className="inline-flex items-center bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
+                <span className="w-2 h-2 me-1 bg-green-500 rounded-full"></span>
+                online
+      </span>
     {/* <img ref={imgRef}  alt="Alegra Labs" className="w-24 h-24" /> */}
     {
       connectionState === "failed" &&
       <div className='space-x-4'>
         <p>Connection failed </p>
-        <button onClick={handleJoinRoom} className='bg-indigo-500 hover:bg-indigo-700 text-white px-2 py-1 rounded-md mr-2'>
+        <button onClick={()=>handleJoinRoom()} className='bg-indigo-500 hover:bg-indigo-700 text-white px-2 py-1 rounded-md mr-2'>
           Retry
         </button>
         
@@ -654,7 +751,7 @@ const Rtc: React.FC = () => {
     connectionState === "disconnected" && (
 
     loading? <div className="flex justify-center">
-      <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-indigo-500"></div>
+      <div className="animate-spin rounded-full h-28 w-28 border-8 border-dashed border-indigo-500"></div>
     </div> :
     <>
 
@@ -695,7 +792,7 @@ const Rtc: React.FC = () => {
             placeholder="Enter Remote ID"
             className='focus:outline-none  text-indigo-600 focus:border-indigo-700 border-solid border-2 border-gray-400 rounded-md px-2 py-1 bg-trasparent w-64 text-sm'
           />
-          <button onClick={handleJoinRoom} className='hover:bg-indigo-500 hover:border-indigo-500 bg-indigo-700 border-solid border-[2px] border-indigo-700 rounded-r-md px-2 py-1  absolute -right-1 top-0'>
+          <button onClick={()=> handleJoinRoom()} className='hover:bg-indigo-500 hover:border-indigo-500 bg-indigo-700 border-solid border-[2px] border-indigo-700 rounded-r-md px-2 py-1  absolute -right-1 top-0'>
              
              <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -750,7 +847,7 @@ const Rtc: React.FC = () => {
         <>
       {
        connectionState === "connected" && trackReceived  && 
-      <div className='flex justify-center gap-4 py-4'>
+        <div className='flex justify-center gap-4 py-4'>
         {/* <label className="inline-flex items-center cursor-pointer ">
           <input
              type="checkbox"
@@ -780,24 +877,24 @@ const Rtc: React.FC = () => {
         </div>
         } 
       
-      <div className='relative'
-        style={{display:`${ trackReceived ? "block" : "none"}`}}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onWheel={handleMouseScroll}
-        onMouseMove={handleMouseMove}
-        onClick={handleMouseClick}
-        onContextMenu={handleMouseClick}
-        onKeyUp={handleKeyUp}
-        tabIndex={0}>
-        {/* { 
-          connectionState === "connected" &&
+        <div className='relative'
+          style={{display:`${ trackReceived ? "block" : "none"}`}}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onWheel={handleMouseScroll}
+          onMouseMove={handleMouseMove}
+          onClick={handleMouseClick}
+          onContextMenu={handleMouseClick}
+          onKeyUp={handleKeyUp}
+          tabIndex={0}>
+          {/* { 
+            connectionState === "connected" &&
 
-        }    */}
-        <video ref={videoRef} className="video cursor-none" style={{ width: "100%"}}>
-          video not available
-        </video>
-      </div>
+          }    */}
+          <video ref={videoRef} className="video cursor-none" style={{ width: "100%"}}>
+            video not available
+          </video>
+        </div>
       </>
       }
     </section>

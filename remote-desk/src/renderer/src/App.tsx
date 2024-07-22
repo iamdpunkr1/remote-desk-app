@@ -7,6 +7,11 @@ import { v4 as uuidv4 } from 'uuid';
 declare global {
   interface Window {
     electronAPI: {
+      onQuitCancelled(arg0: () => void): unknown;
+      onPerformDisconnect(handleForcedDisconnect: () => void): unknown;
+      onAppClosing(handleAppClosing: () => void): unknown;
+      sendQuitApp(): unknown;
+      sendConfirmQuit(hasActiveConnection: boolean): unknown;
       sendMouseDown(payload: any): unknown;
       sendMouseUp(payload: any): unknown;
       getScreenId: (callback: (event: any, screenId: string) => void) => void;

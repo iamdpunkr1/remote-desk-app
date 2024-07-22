@@ -1,8 +1,9 @@
-import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu, screen } from 'electron';
+import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu, screen, dialog } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
 import robot from "@hurdlegroup/robotjs"
+import { c } from 'vite/dist/node/types.d-aGj9QkWt';
 
 
 
@@ -13,6 +14,7 @@ let scaleFactor:number=1;
 let screenHeight:number;
 let screenWidth:number;
 let nativeOrigin = { x: 0, y: 0 };
+let isQuitting:boolean = false;
 
 const sendSelectedScreen = (item) => {
   mainWindow.webContents.send('SET_SOURCE_ID', item.id);
@@ -74,7 +76,7 @@ function createWindow(): void {
     mainWindow.show();
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       availableScreens = sources;
-      console.log("Sources: ", sources[0].thumbnail.toJPEG(100));
+      // console.log("Sources: ", sources[0].thumbnail.toJPEG(100));
 
       // console.log("Available Screens", availableScreens);
       // selectedScreen = sources[0].thumbnail.getSize();
@@ -106,6 +108,14 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
+
+  // Handle window close event
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow!.webContents.send('app-closing');
+    }
+  });
 }
 
 // This method will be called when Electron has finished
@@ -129,7 +139,7 @@ app.whenReady().then(() => {
     desktopCapturer.getSources({ types: ['screen'], thumbnailSize:{width:1, height:1} }).then((sources) => {
       availableScreens = sources;
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
-      createTray();
+      // createTray();
     } );
   } )
 
@@ -140,7 +150,7 @@ app.whenReady().then(() => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       availableScreens = sources;
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
-      createTray();
+      // createTray();
     } );
     
   } )
@@ -283,6 +293,35 @@ app.whenReady().then(() => {
       console.log("Mouse-scroll: "+e)
     }
   });
+});
+
+
+ipcMain.on('confirm-quit', (event, hasActiveConnection) => {
+  console.log("Confirm quit ", hasActiveConnection)
+  if (hasActiveConnection) {
+    console.log("Has active connection")
+    dialog.showMessageBox(mainWindow!, {
+      type: 'question',
+      buttons: ['Stay', 'Quit'],
+      title: 'Confirm',
+      message: 'You have an active connection. Are you sure you want to quit?'
+    }).then(({ response }) => {
+      if (response === 1) { // User chose to quit
+        mainWindow!.webContents.send('perform-disconnect');
+      } else {
+        event.sender.send('quit-cancelled');
+      }
+    });
+  } else {
+    console.log("No active connection")
+    isQuitting = true;
+    app.quit();
+  }
+});
+
+ipcMain.on('quit-app', () => {
+  isQuitting = true;
+  app.quit();
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common

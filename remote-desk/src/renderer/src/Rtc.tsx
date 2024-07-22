@@ -6,27 +6,27 @@ import { v4 as uuidv4 } from 'uuid';
 // import { moveCursor } from 'readline';
 
 
-declare global {
-  interface Window {
-    electronAPI: {
-      setSize: (size: { width: number; height: number }) => void;
-      getScreenId: (callback: (event: any, screenId: string) => void) => void;
-      getAvailableScreens: (callback: (event: any, screens: any[]) => void) => void;
-      sendMouseMove: (data: { x: number, y: number }) => void;
-      sendMouseClick: (data: { x: number, y: number, button: number }) => void;
-      sendKeyUp: (data: { key: string, code: string }) => void;
-      sendScreenChange: (data: string) => void;
-      sendMouseScroll: (data: { deltaX: number, deltaY: number }) => void;
-      sendMouseDown: (data: boolean) => void;
-      sendMouseUp: (data: boolean) => void;
-      onAppClosing: (callback: () => void) => void;
-      onPerformDisconnect: (callback: () => void) => void;
-      onQuitCancelled: (callback: () => void) => void;
-      sendConfirmQuit: (hasActiveConnection: boolean) => void;
-      sendQuitApp: () => void;
-    };
-  }
-}
+// declare global {
+//   interface Window {
+//     electronAPI: {
+//       setSize: (size: { width: number; height: number }) => void;
+//       getScreenId: (callback: (event: any, screenId: string) => void) => void;
+//       getAvailableScreens: (callback: (event: any, screens: any[]) => void) => void;
+//       sendMouseMove: (data: { x: number, y: number }) => void;
+//       sendMouseClick: (data: { x: number, y: number, button: number }) => void;
+//       sendKeyUp: (data: { key: string, code: string }) => void;
+//       sendScreenChange: (data: string) => void;
+//       sendMouseScroll: (data: { deltaX: number, deltaY: number }) => void;
+//       sendMouseDown: (data: boolean) => void;
+//       sendMouseUp: (data: boolean) => void;
+//       onAppClosing: (callback: () => void) => void;
+//       onPerformDisconnect: (callback: () => void) => void;
+//       onQuitCancelled: (callback: () => void) => void;
+//       sendConfirmQuit: (hasActiveConnection: boolean) => void;
+//       sendQuitApp: () => void;
+//     };
+//   }
+// }
 
 type screenType = {
   id:string,
@@ -64,7 +64,7 @@ const Rtc: React.FC = () => {
   const dataChannel = useRef<RTCDataChannel | null>(null);
   const [videoRects, setVideoRects] = useState<DOMRect | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [isQuitting, setIsQuitting] = useState<boolean>(false);
+  // const [isQuitting, setIsQuitting] = useState<boolean>(false);
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const joinedRoomId = useRef<string | null>(null);
 
@@ -80,6 +80,51 @@ const Rtc: React.FC = () => {
       }   
     ],
   }) as RTCPeerConnection);
+  const [isOnline, setIsOnline] = useState<boolean>(false);
+  // const connectionCheckInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // const checkOnlineStatus = async () => {
+  //   console.log("Checking online status...");
+  //   const pc = new RTCPeerConnection({
+  //     iceServers: [
+  //       { urls: 'stun:stun1.l.google.com:19302' },
+  //       {
+  //         urls: 'turn:freestun.net:3479',
+  //         username: 'free',
+  //         credential: 'free',
+  //       }
+  //     ]
+  //   });
+
+  //   try {
+  //     pc.createDataChannel("");
+  //     const offer = await pc.createOffer();
+  //     await pc.setLocalDescription(offer);
+
+  //     let isConnected = false;
+  //     const timeout = new Promise<boolean>((resolve) => {
+  //       setTimeout(() => resolve(false), 5000);  // 5 seconds timeout
+  //     });
+
+  //     const checkConnection = new Promise<boolean>((resolve) => {
+  //       pc.onicecandidate = (e) => {
+  //         if (e.candidate === null) {
+  //           console.log("ICE Candidate online status: ", pc.iceConnectionState);
+  //           resolve(pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed');
+  //         }
+  //       };
+  //     });
+
+  //     isConnected = await Promise.race([checkConnection, timeout]);
+  //     console.log("Online status:", isConnected);
+  //     setIsOnline(isConnected);
+  //   } catch (err) {
+  //     console.error("Error checking online status:", err);
+  //     setIsOnline(false);
+  //   } finally {
+  //     pc.close();
+  //   }
+  // };
   // const [isChecked, setIsChecked] = useState<boolean>(false);
 
   // const handleToggle = () => {
@@ -204,6 +249,7 @@ const Rtc: React.FC = () => {
       setConnectionState(newPeerConnection.connectionState);
       console.log('ICE connection state:', newPeerConnection.iceConnectionState);
       if (newPeerConnection.iceConnectionState === 'failed') {
+        setTrackReceived(false)
         // Trigger ICE restart
         newPeerConnection.restartIce();
       }
@@ -235,7 +281,7 @@ const Rtc: React.FC = () => {
 
   const handleAppClosing = () => {
     console.log("App closing event received");
-    setIsQuitting(true);
+    // setIsQuitting(true);
     const hasActiveConnection = videoRef.current?.srcObject !== null;
     // console.log("Connection state: ", ); 
     // console.log("Has active connection: ", hasActiveConnection);
@@ -245,14 +291,21 @@ const Rtc: React.FC = () => {
   const handleForcedDisconnect = async () => {
  
     // await handleDisconnect();
+    console.log("Forced disconnect event received: ", joinedRoomId.current);
     socket.emit('leave-room', joinedRoomId.current);
-    // setTimeout(() => {
-    //   window.electronAPI.sendQuitApp();
-    // }, 2000);
-    window.electronAPI.sendQuitApp();
+    setTimeout(() => {
+      window.electronAPI.sendQuitApp();
+    }, 1000);
+    // window.electronAPI.sendQuitApp();
   };
 
   useEffect(() => {
+     // Initial check
+    //  checkOnlineStatus();
+
+     // Set up interval for periodic checks
+    //  connectionCheckInterval.current = setInterval(checkOnlineStatus, 5000);  // Check every 30 seconds
+ 
 
     rtcPeerConnection.current = createPeerConnection();
 
@@ -263,7 +316,7 @@ const Rtc: React.FC = () => {
     window.electronAPI.onPerformDisconnect(handleForcedDisconnect);
 
     // Listen for quit cancelled event
-    window.electronAPI.onQuitCancelled(() => setIsQuitting(false));
+    // window.electronAPI.onQuitCancelled(() => setIsQuitting(false));
 
     // console.log("SUpported Constraints: ",navigator.mediaDevices.getSupportedConstraints())
 
@@ -284,6 +337,7 @@ const Rtc: React.FC = () => {
       console.log("Connected to server");
       socket.emit("join-room", roomId);
       socket.emit("electron-app", "Hello from Electron App");
+      setIsOnline(true);
     });
 
     
@@ -399,8 +453,10 @@ const Rtc: React.FC = () => {
 
     
     return () => {
-      //  socket.emit('leave-room', roomId);
-      //  socket.close();
+
+      // if (connectionCheckInterval.current) {
+      //   clearInterval(connectionCheckInterval.current);
+      // }
       socket.close();
       
       // rtcPeerConnection.current?.removeEventListener("track", handleTrack);
@@ -688,7 +744,7 @@ const Rtc: React.FC = () => {
   
     // Set the new room ID
     setRoomId(newRoomID);
-  
+    videoRef.current!.srcObject = null;
     // Create a new peer connection
     rtcPeerConnection.current = createPeerConnection();
   
@@ -715,14 +771,11 @@ const Rtc: React.FC = () => {
 
   return (
     <section className="flex flex-col justify-center items-center h-screen">
-      <span className="inline-flex items-center bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
-                <span className="w-2 h-2 me-1 bg-green-500 rounded-full"></span>
-                online
-      </span>
+      
     {/* <img ref={imgRef}  alt="Alegra Labs" className="w-24 h-24" /> */}
     {
       connectionState === "failed" &&
-      <div className='space-x-4'>
+      <div className='flex gap-4'>
         <p>Connection failed </p>
         <button onClick={()=>handleJoinRoom()} className='bg-indigo-500 hover:bg-indigo-700 text-white px-2 py-1 rounded-md mr-2'>
           Retry
@@ -754,6 +807,18 @@ const Rtc: React.FC = () => {
       <div className="animate-spin rounded-full h-28 w-28 border-8 border-dashed border-indigo-500"></div>
     </div> :
     <>
+      {
+        isOnline?
+        <span className="inline-flex items-center bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
+                <span className="w-2 h-2 me-1 bg-green-500 rounded-full"></span>
+                online
+      </span>
+        :
+      <span className="inline-flex items-center bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-red-900 dark:text-red-300">
+                <span className="w-2 h-2 me-1 bg-red-500 rounded-full"></span>
+                offline
+      </span>
+      }
 
       <div className="flex justify-center">
         <div className='space-y-1'>
@@ -825,7 +890,7 @@ const Rtc: React.FC = () => {
 
 {
       connectionState === "connected" && !trackReceived &&
-      <div>
+      <div className='flex gap-4'>
         <h6>Connected, Your screen is being shared</h6>
         <button onClick={handleDisconnect}
                 className=' bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>

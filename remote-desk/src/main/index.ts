@@ -3,7 +3,7 @@ import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
 import robot from "@hurdlegroup/robotjs"
-import { c } from 'vite/dist/node/types.d-aGj9QkWt';
+
 
 
 
@@ -16,36 +16,36 @@ let screenWidth:number;
 let nativeOrigin = { x: 0, y: 0 };
 let isQuitting:boolean = false;
 
-const sendSelectedScreen = (item) => {
-  mainWindow.webContents.send('SET_SOURCE_ID', item.id);
-};
+// const sendSelectedScreen = (item) => {
+//   mainWindow.webContents.send('SET_SOURCE_ID', item.id);
+// };
 
-const createTray = () => {
-  // console.log("Available Screens", availableScreens);
-  const screensMenu = availableScreens.map(item => {
-    return {
-      label: item.name,
-      click: () => {
-        sendSelectedScreen(item);
-      }
-    };
-  });
+// const createTray = () => {
+//   // console.log("Available Screens", availableScreens);
+//   const screensMenu = availableScreens.map(item => {
+//     return {
+//       label: item.name,
+//       click: () => {
+//         sendSelectedScreen(item);
+//       }
+//     };
+//   });
 
-  const menu = Menu.buildFromTemplate([
-    {
-      label: app.name,
-      submenu: [
-        { role: 'quit' }
-      ]
-    },
-    {
-      label: 'Screens',
-      submenu: screensMenu
-    }
-  ]);
+//   const menu = Menu.buildFromTemplate([
+//     {
+//       label: app.name,
+//       submenu: [
+//         { role: 'quit' }
+//       ]
+//     },
+//     {
+//       label: 'Screens',
+//       submenu: screensMenu
+//     }
+//   ]);
 
-  Menu.setApplicationMenu(menu);
-};
+//   Menu.setApplicationMenu(menu);
+// };
 function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({

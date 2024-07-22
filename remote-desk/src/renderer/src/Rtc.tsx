@@ -3,12 +3,12 @@ import io from "socket.io-client";
 import { useRoom } from './context/RoomContext';
 import './App.css';
 import { v4 as uuidv4 } from 'uuid';
+// import { moveCursor } from 'readline';
+
 
 declare global {
   interface Window {
     electronAPI: {
-      sendMouseDown(payload: any): unknown;
-      sendMouseUp(payload: any): unknown;
       getScreenId: (callback: (event: any, screenId: string) => void) => void;
       setSize: ({ width, height }: { width: number; height: number }) => void;
       getAvailableScreens: (callback: (event: any, screens: screenType[]) => void) => void;
@@ -17,6 +17,8 @@ declare global {
       sendKeyUp: (data: { key: string, code: string }) => void;
       sendScreenChange: (data: string) => void;
       sendMouseScroll: (data: { deltaX: number, deltaY: number }) => void;
+      sendMouseDown: (data: boolean) => void;
+      sendMouseUp: (data: boolean) => void;
 
     };
   }
@@ -45,21 +47,22 @@ const modiferCheckers = (e: React.KeyboardEvent<HTMLDivElement>) => {
   return modifier;
 }
 
-const App: React.FC = () => {
+const Rtc: React.FC = () => {
   const { roomId, setRoomId } = useRoom();
   const videoRef = useRef<HTMLVideoElement>(null);
   const socket = useMemo(() => io("https://alegralabs.com:5007"), []);
-  // const [availableScreens, setAvailableScreens] = useState<{ id: string, name: string }[]>([]);
   const availableScreensRef = useRef<screenType[]>([]);
   const [screensRecieved, setScreensRecieved] =  useState<screenType[]>([]);
   const [selectedScreen, setSelectedScreen] = useState<string>("");
-  // const [roomId, setRoomId] = useState<string | null>(null);
   const [joinRoomId, setJoinRoomId] = useState<string>('');
   const [connectionState, setConnectionState] = useState<string>('disconnected');
-  // const [isSharing, setIsSharing] = useState<boolean>(false);
   const [trackReceived, setTrackReceived] = useState<boolean>(false);
-  const [isDraggable, setIsDraggable] = useState<boolean>(false);
+  const dataChannel = useRef<RTCDataChannel | null>(null);
+  const [videoRects, setVideoRects] = useState<DOMRect | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
+  // iceServers: [{"urls":"stun:stun.relay.metered.ca:80"},{"urls":"turn:global.relay.metered.ca:80","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turn:global.relay.metered.ca:80?transport=tcp","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turn:global.relay.metered.ca:443","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turns:global.relay.metered.ca:443?transport=tcp","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"}],
 
   const rtcPeerConnection = useRef<RTCPeerConnection | null>(new RTCPeerConnection({
     iceServers: [
@@ -71,10 +74,43 @@ const App: React.FC = () => {
       }   
     ],
   }) as RTCPeerConnection);
+  // const [isChecked, setIsChecked] = useState<boolean>(false);
+
+  // const handleToggle = () => {
+  //   setIsChecked(!isChecked);
+  // };
+
+  const handleDataChannelMessage =async (event: MessageEvent) => {
+
+   
+    const data = JSON.parse(event.data);
+    console.log("Data Channel Message: ", data);
+    switch (data.type) {
+      case 'mouse-move':
+        window.electronAPI.sendMouseMove(data.payload);
+        break;
+      case 'mouse-click':
+        window.electronAPI.sendMouseClick(data.payload);
+        break;
+      case 'key-up':
+        window.electronAPI.sendKeyUp(data.payload);
+        break;
+      case 'mouse-scroll':
+        window.electronAPI.sendMouseScroll(data.payload);
+        break;
+      case 'mouse-down':
+        window.electronAPI.sendMouseDown(data.payload);
+        break;
+      case 'mouse-up':
+        window.electronAPI.sendMouseUp(data.payload);
+        break;
+     
+
+    }
+  };
+
 
   const handleStream = (stream: MediaStream, roomId:string) => {
-    // if (videoRef.current) {
-    //   videoRef.current.srcObject = stream;
 
       const sender = rtcPeerConnection.current?.getSenders().find(s => s.track?.kind === 'video');
       if (sender) {
@@ -85,9 +121,6 @@ const App: React.FC = () => {
         });
       }
 
-      // videoRef.current.onloadedmetadata = () => {
-      //   videoRef.current?.play();
-      // };
 
       // Notify the remote peer about the new stream
       rtcPeerConnection.current?.createOffer().then(sdp => {
@@ -98,16 +131,14 @@ const App: React.FC = () => {
   };
 
   const getStream = async (screenId: string, roomId:string) => {
-    console.log('Getting stream for screen:', screenId);
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
-          // mandatory: {
-          //   chromeMediaSource: 'desktop',
-          //   chromeMediaSourceId: screenId,
-          // } 
-          cursor: "never",
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: screenId,
+          } 
         }as any
       });
 
@@ -121,6 +152,7 @@ const App: React.FC = () => {
 
   const handleTrack = (e: RTCTrackEvent) => {
     console.log('Track received:', e.streams[0]);
+
     if(e.streams[0]){
       setTrackReceived(true);
     }
@@ -130,7 +162,10 @@ const App: React.FC = () => {
       videoRef.current.onloadedmetadata = () => {
         videoRef.current?.play();
       };
+      setLoading(false);
+      setRoomId(joinRoomId);
     }
+
   }     
 
 
@@ -145,36 +180,53 @@ const App: React.FC = () => {
           credential: 'free',
         }
       ],
+      // iceTransportPolicy: 'all',
+      // iceCandidatePoolSize: 10
     });
-
+  
     newPeerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('ice-candidate', { candidate: event.candidate, roomId });
       }
     };
-
-    newPeerConnection.ontrack = (event) => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = event.streams[0];
-      }
-      setTrackReceived(true);
-    };
-
+  
+    newPeerConnection.ontrack = handleTrack;
+  
     newPeerConnection.onconnectionstatechange = () => {
       setConnectionState(newPeerConnection.connectionState);
+      console.log('ICE connection state:', newPeerConnection.iceConnectionState);
+      // if (newPeerConnection.iceConnectionState === 'failed') {
+      //   // Trigger ICE restart
+      //   newPeerConnection.restartIce();
+      // }
     };
-
-    rtcPeerConnection.current = newPeerConnection;
+  
+    newPeerConnection.ondatachannel = (event) => {
+      dataChannel.current = event.channel;
+      dataChannel.current.onmessage = handleDataChannelMessage;
+    };
+  
     return newPeerConnection;
   };
 
   useEffect(() => {
-    console.log("SUpported Constraints: ",navigator.mediaDevices.getSupportedConstraints())
-      // window.electronAPI.getScreenId((_, screenId) => {
-      //   console.log('Renderer...', screenId);
-      // });
 
-    console.log("Room ID:", roomId);
+    rtcPeerConnection.current = createPeerConnection();
+
+    // console.log("SUpported Constraints: ",navigator.mediaDevices.getSupportedConstraints())
+
+    // if(rtcPeerConnection.current){
+    //   console.log("Data Channel created");
+    //   dataChannel.current = rtcPeerConnection.current.createDataChannel("dataChannel");
+    //   dataChannel.current.onopen = () => {
+    //     console.log('Data channel is open');
+    //   };
+
+    //   dataChannel.current.onmessage = handleDataChannelMessage;
+    // }
+
+    
+    // console.log("Room ID:", roomId);
     // socket.emit("join-room", roomId);
     socket.on("connect", () => {
       console.log("Connected to server");
@@ -183,7 +235,7 @@ const App: React.FC = () => {
     });
 
     
-
+  
 
     // Listen for available screens from the main process
     window.electronAPI.getAvailableScreens((_, screens) => {
@@ -201,8 +253,7 @@ const App: React.FC = () => {
 
     socket.on("user-joined",async (roomId)=>{
       setRoomId(roomId);
-      // window.electronAPI.getScreenId((_, screenId) => {
-      //   console.log('Renderer...', screenId);
+
     console.log("availableScreens", availableScreensRef.current);
     if (availableScreensRef.current.length > 0) {
       console.log("screen id: ", availableScreensRef.current[0].id);
@@ -210,7 +261,7 @@ const App: React.FC = () => {
     } else {
       console.log("No available screens");
     }
-      // });
+
     })
 
 
@@ -222,9 +273,9 @@ const App: React.FC = () => {
         .then(answer => {
           rtcPeerConnection.current?.setLocalDescription(answer);
           socket.emit("answer", JSON.stringify(answer), roomId);
-          // setIsSharing(s=>true);
-          // console.log("isSharing", isSharing);
+
         });
+
     });
 
     socket.on('answer', (sdp: string) => {
@@ -239,6 +290,7 @@ const App: React.FC = () => {
     socket.on("available-screens", (screens: screenType[]) => {
       console.log('Screens recieved: ', screens);
       setScreensRecieved(screens);
+
     } );
 
     socket.on('icecandidate', (candidate: string) => {
@@ -255,26 +307,7 @@ const App: React.FC = () => {
       }
     });
 
-    socket.on("mouse-move", (data) => {
-      console.log("Mouse move: ", data);
-      window.electronAPI.sendMouseMove(data);
-    });
-
-    socket.on("mouse-click", (data) => {
-      console.log("Mouse click: ", data);
-      window.electronAPI.sendMouseClick(data);
-    });
-
-    socket.on("mouse-scroll", (data) => {
-      console.log("Mouse scroll: ", data);
-      window.electronAPI.sendMouseScroll(data);
-    } );
     
-    socket.on("key-up", (data) => {
-      console.log("Key up: ", data);
-      window.electronAPI.sendKeyUp(data);
-    });
-
     if (rtcPeerConnection.current) {
       rtcPeerConnection.current.onicecandidate = (e) => {
         if (e.candidate) {
@@ -288,7 +321,7 @@ const App: React.FC = () => {
         setConnectionState(rtcPeerConnection.current?.connectionState || 'disconnected');
       };
 
-    rtcPeerConnection.current.addEventListener("track", handleTrack);
+    // rtcPeerConnection.current.addEventListener("track", handleTrack);
 
     //  rtcPeerConnection.current.ontrack = (e) => {
     //   console.log('Track received:', e.streams[0]);
@@ -312,13 +345,51 @@ const App: React.FC = () => {
     
     return () => {
       socket.close();
-      rtcPeerConnection.current?.removeEventListener("track", handleTrack);
+      // rtcPeerConnection.current?.removeEventListener("track", handleTrack);
       rtcPeerConnection.current?.close();
       rtcPeerConnection.current = null;
+      if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+      }
     };
   }, []); 
+
+  // useEffect(() => {
+  //   // ... existing code
+  //   if(rtcPeerConnection.current){
+  //   rtcPeerConnection.current.ondatachannel = (event) => {
+  //     console.log("Data Channel created event ", event);
+  //     dataChannel.current = event.channel;
+  //   };
+  //   }
+    
+  // }, []);
+
   
   
+  // Function to handle resize events
+  const handleResize = (entries: ResizeObserverEntry[]) => {
+    for (let entry of entries) {
+
+      if (entry.target === videoRef.current) {
+        setVideoRects(entry.target.getBoundingClientRect());
+      }
+    }
+  };
+
+  useEffect(() => {
+    // Create a ResizeObserver to monitor video element size changes
+    const resizeObserver = new ResizeObserver(handleResize);
+    if (videoRef.current) {
+      resizeObserver.observe(videoRef.current);
+      console.log("video Rect: ", videoRects)
+      setVideoRects(videoRef.current.getBoundingClientRect()); // Initialize videoRects
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
  
   // const switchScreen = (screenId: string) => {
   //   getStream(screenId);
@@ -339,17 +410,66 @@ const App: React.FC = () => {
       
       console.log("Mouse Scroll", deltaX, deltaY);
       // Emit scroll data to server via Socket.io
-      socket.emit("mouse-scroll", { deltaX, deltaY }, roomId);
+    //   socket.emit("mouse-scroll", { deltaX, deltaY }, roomId);
+        if(dataChannel.current){
+            console.log("mouse scroll sent via RTC: ");
+            dataChannel.current.send(JSON.stringify({
+                type: 'mouse-scroll',
+                payload: { deltaX, deltaY }
+            }));
+        }
     }
   }
 
 
+  const handleMouseDown = (_: React.MouseEvent<HTMLDivElement>) => {
+    if(dataChannel.current){
+      console.log("mouse down sent via RTC: ");
+      dataChannel.current.send(JSON.stringify({
+          type: 'mouse-down',
+          payload: true
+        }));
+  }
+  }
 
+  const handleMouseUp = (_: React.MouseEvent<HTMLDivElement>) => {
+    if(dataChannel.current){
+      console.log("mouse up sent via RTC: ");
+      dataChannel.current.send(JSON.stringify({
+          type: 'mouse-up',
+          payload: true
+        }));
+  }
+  }
+
+  // const handleJoinRoom = () => {
+  //   setLoading(true);
+  //   if (joinRoomId.trim()) {
+  //     socket.emit("join-room", joinRoomId);
+
+  //   }
+    
+  // };
   const handleJoinRoom = () => {
+    setLoading(true);
     if (joinRoomId.trim()) {
+      // If there's an existing connection, close it
+      if (rtcPeerConnection.current) {
+        rtcPeerConnection.current.close();
+      }
+      
+      // Create a new peer connection
+      rtcPeerConnection.current = createPeerConnection();
+      
+      // Create a new data channel
+      dataChannel.current = rtcPeerConnection.current.createDataChannel("dataChannel");
+      dataChannel.current.onopen = () => {
+        console.log('Data channel is open');
+      };
+      dataChannel.current.onmessage = handleDataChannelMessage;
+  
+      // Join the room
       socket.emit("join-room", joinRoomId);
-      setRoomId(joinRoomId);
-      // setIsSharing(false);
     }
   };
 
@@ -363,28 +483,59 @@ const App: React.FC = () => {
     }
   };
 
-  // const handleLeaveRoom = () => {
-  //   socket.emit("leave-room", roomId);
-  //   setRoomId(null);
-  // };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    // console.log("Mouse Move")
-    if(connectionState === "connected" && videoRef.current){
-      const videoRect = videoRef.current.getBoundingClientRect();
-      const relativeX = (e.clientX - videoRect.left) / videoRect.width;
-      const relativeY = (e.clientY - videoRect.top) / videoRect.height;
+    if (connectionState === "connected" && videoRef.current && videoRects) {
+      console.log("Mouse move called");
+      // const videoRect = videoRef.current.getBoundingClientRect();
+
+      const relativeX = (e.clientX - videoRects.left) / videoRects.width;
+      const relativeY = (e.clientY - videoRects.top) / videoRects.height;
       
-      socket.emit("mouse-move", {
-        x: relativeX,
-        y: relativeY,
-        isDraggable
-      }, roomId);
+      if (dataChannel.current) {
+        const message = JSON.stringify({
+          type: 'mouse-move',
+          payload: {
+            x: relativeX,
+            y: relativeY,
+          }
+        });
+        // console.timeEnd("Mouse move");
+        // Example using requestAnimationFrame to throttle updates
+        // if (!mouseMoveTimeout.current) {
+        //   mouseMoveTimeout.current = requestAnimationFrame(() => {
+        //     dataChannel.current!.send(message);
+        //     mouseMoveTimeout.current = null;
+        //   });
+        // }
+
+         // Example of debouncing using useRef to store timeout ID
+      if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+      }
+      debounceTimeout.current = setTimeout(() => {
+        dataChannel.current!.send(message);
+        debounceTimeout.current = null;
+      }, 14); // Adjust the delay as needed
+      }
     }
   };
+  
 
   const handleMouseClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if(connectionState === "connected") 
-      socket.emit("mouse-click",{ x: e.clientX, y: e.clientY, button: e.button }, roomId);
+    //   socket.emit("mouse-click",{ x: e.clientX, y: e.clientY, button: e.button }, roomId);
+      if(dataChannel.current){
+        console.log("mouse click sent via RTC: ");
+        if(dataChannel.current){
+            console.log("mouse move sent via RTC: ");
+            dataChannel.current.send(JSON.stringify({
+                type: 'mouse-click',
+                payload: { x: e.clientX, y: e.clientY, button: e.button }
+              }));
+        }
+      
+      }
   };
 
 
@@ -394,37 +545,71 @@ const App: React.FC = () => {
       const modifier = modiferCheckers(e);
       console.log("Modifers:  ", modifier);
 
-      socket.emit("key-up",{ key: e.key, code: modifier }, roomId);
+    //   socket.emit("key-up",{ key: e.key, code: modifier }, roomId);
+
+      if(dataChannel.current){
+        console.log("key up sent via RTC: ");
+        dataChannel.current.send(JSON.stringify({
+            type: 'key-up',
+            payload: { key: e.key, code: modifier }
+          }));
+      }
     }
   };
 
-  const handleDisconnect = () => {
+  // const handleDisconnect = () => {
 
-    // Close the RTC peer connection
+  //   // Close the RTC peer connection
+  //   if (rtcPeerConnection.current) {
+  //     rtcPeerConnection.current.close();
+  //     rtcPeerConnection.current = null;
+  //     // createPeerConnection();
+  //   }
+  
+  //   // Reset connection state and any related states
+  //   setConnectionState('disconnected');
+  //   setTrackReceived(false);
+
+  //   const newRoomID = uuidv4().slice(0, 8);
+  
+  //   // Emit leave room event to the socket server if needed
+  //   socket.emit('leave-room', roomId);
+  //   setRoomId(newRoomID);
+  //   socket.emit('join-room', newRoomID);
+  // };
+  const handleDisconnect = () => {
+    // Close the existing RTC peer connection
     if (rtcPeerConnection.current) {
       rtcPeerConnection.current.close();
-      rtcPeerConnection.current = null;
-      createPeerConnection();
-      // rtcPeerConnection.current = new RTCPeerConnection({
-      //   iceServers: [
-      //     { urls: 'stun:stun1.l.google.com:19302' },
-      //     { urls: 'stun:stun3.l.google.com:19302' },
-      //     { urls: 'stun:stun4.l.google.com:19302' }
-      //   ],
-      // }) 
     }
   
-    // Reset connection state and any related states
+    // Reset connection state and related states
     setConnectionState('disconnected');
     setTrackReceived(false);
-
+  
+    // Generate a new room ID
     const newRoomID = uuidv4().slice(0, 8);
   
-    // Emit leave room event to the socket server if needed
+    // Emit leave room event to the socket server
     socket.emit('leave-room', roomId);
+  
+    // Set the new room ID
     setRoomId(newRoomID);
+  
+    // Create a new peer connection
+    rtcPeerConnection.current = createPeerConnection();
+  
+    // Create a new data channel
+    dataChannel.current = rtcPeerConnection.current.createDataChannel("dataChannel");
+    dataChannel.current.onopen = () => {
+      console.log('Data channel is open');
+    };
+    dataChannel.current.onmessage = handleDataChannelMessage;
+  
+    // Join the new room
     socket.emit('join-room', newRoomID);
   };
+
 
   const handleScreenChange = (screen:screenType, roomId: string | null) => {
     console.log("Screen change emmited: ", screen, roomId);
@@ -434,12 +619,14 @@ const App: React.FC = () => {
   
 
 
+
   return (
     <section className="flex flex-col justify-center items-center h-screen">
+    {/* <img ref={imgRef}  alt="Alegra Labs" className="w-24 h-24" /> */}
     {
       connectionState === "failed" &&
-      <div className='space-x-2'>
-        Connection failed 
+      <div className='space-x-4'>
+        <p>Connection failed </p>
         <button onClick={handleJoinRoom} className='bg-indigo-500 hover:bg-indigo-700 text-white px-2 py-1 rounded-md mr-2'>
           Retry
         </button>
@@ -461,10 +648,14 @@ const App: React.FC = () => {
             ))
           }
         </div>
-    </div>
+      </div>
     }
     {
-    connectionState === "disconnected" &&
+    connectionState === "disconnected" && (
+
+    loading? <div className="flex justify-center">
+      <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-indigo-500"></div>
+    </div> :
     <>
 
       <div className="flex justify-center">
@@ -505,6 +696,7 @@ const App: React.FC = () => {
             className='focus:outline-none  text-indigo-600 focus:border-indigo-700 border-solid border-2 border-gray-400 rounded-md px-2 py-1 bg-trasparent w-64 text-sm'
           />
           <button onClick={handleJoinRoom} className='hover:bg-indigo-500 hover:border-indigo-500 bg-indigo-700 border-solid border-[2px] border-indigo-700 rounded-r-md px-2 py-1  absolute -right-1 top-0'>
+             
              <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -519,10 +711,12 @@ const App: React.FC = () => {
                 d="m11 16 4-4m0 0-4-4m4 4H3m1.516 5a9 9 0 1 0 0-10"
               />
             </svg>
+            
           </button>
         </div>
       </div>
-    </>          
+    </>  
+    )        
     }
 
     {
@@ -553,39 +747,63 @@ const App: React.FC = () => {
 
 
       {
-      // connectionState === "connecting" || trackReceived  &&
-      <div className='relative'  style={{display:`${ trackReceived ? "block" : "none"}`}}
-       onMouseDown={() => setIsDraggable(true)}
-       onMouseUp={() => setIsDraggable(false)}
-       onWheel={handleMouseScroll}
+        <>
+      {
+       connectionState === "connected" && trackReceived  && 
+      <div className='flex justify-center gap-4 py-4'>
+        {/* <label className="inline-flex items-center cursor-pointer ">
+          <input
+             type="checkbox"
+             defaultValue=""
+             checked={isChecked}
+             onChange={handleToggle} 
+             className="sr-only peer" />
+          <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600" />
+          <span className="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300">
+            Show Cursor
+          </span>
+        </label> */}
+
+        <button onClick={handleDisconnect}
+          className=' bg-red-500 hover:bg-red-700 text-white text-sm px-2 py-1 rounded-md'>
+          {/* <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="#fff"
+          stroke="#fff"
+          viewBox="0 0 1024 1024"
+          className='w-5 h-5'
+          >
+          <path d="M195.2 195.2a64 64 0 0 1 90.496 0L512 421.504 738.304 195.2a64 64 0 0 1 90.496 90.496L602.496 512 828.8 738.304a64 64 0 0 1-90.496 90.496L512 602.496 285.696 828.8a64 64 0 0 1-90.496-90.496L421.504 512 195.2 285.696a64 64 0 0 1 0-90.496z" />
+          </svg>      */}
+          Diconnect
+        </button> 
+        </div>
+        } 
+      
+      <div className='relative'
+        style={{display:`${ trackReceived ? "block" : "none"}`}}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onWheel={handleMouseScroll}
         onMouseMove={handleMouseMove}
-         onClick={handleMouseClick}
-          onKeyUp={handleKeyUp}
-           tabIndex={0}>
-        { 
+        onClick={handleMouseClick}
+        onContextMenu={handleMouseClick}
+        onKeyUp={handleKeyUp}
+        tabIndex={0}>
+        {/* { 
           connectionState === "connected" &&
-           <button onClick={handleDisconnect}
-                   className='absolute top-0 right-0 bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
-                <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="#fff"
-                stroke="#fff"
-                viewBox="0 0 1024 1024"
-                className='w-5 h-5'
-              >
-                <path d="M195.2 195.2a64 64 0 0 1 90.496 0L512 421.504 738.304 195.2a64 64 0 0 1 90.496 90.496L602.496 512 828.8 738.304a64 64 0 0 1-90.496 90.496L512 602.496 285.696 828.8a64 64 0 0 1-90.496-90.496L421.504 512 195.2 285.696a64 64 0 0 1 0-90.496z" />
-              </svg>     
-            </button> 
-        }   
-        <video ref={videoRef} className="video" style={{ width: "100%" }}>
+
+        }    */}
+        <video ref={videoRef} className="video cursor-none" style={{ width: "100%"}}>
           video not available
         </video>
       </div>
+      </>
       }
-  </section>
+    </section>
   );
 };
 
-export default App;
+export default Rtc;
 
 

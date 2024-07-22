@@ -10,6 +10,8 @@ let availableScreens;
 let mainWindow;
 let selectedScreen;
 let scaleFactor:number=1;
+let screenHeight:number;
+let screenWidth:number;
 let nativeOrigin = { x: 0, y: 0 };
 
 const sendSelectedScreen = (item) => {
@@ -48,12 +50,14 @@ function createWindow(): void {
     width: 800,
     height: 600,
     show: false,
+    autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       nodeIntegration: false,
       contextIsolation: true,
+      
     }
   });
 
@@ -70,14 +74,14 @@ function createWindow(): void {
     mainWindow.show();
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       availableScreens = sources;
-      // console.log("Sources: ", sources);
+      console.log("Sources: ", sources[0].thumbnail.toJPEG(100));
 
       // console.log("Available Screens", availableScreens);
       // selectedScreen = sources[0].thumbnail.getSize();
       
       // console.log("seleted screen: ",sources[0].thumbnail.getSize())
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name, display_id: source.display_id})));
-      createTray();
+      // createTray();
     });
   });
 
@@ -112,6 +116,8 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.size;
+  screenHeight = height * primaryDisplay.scaleFactor;
+  screenWidth = width * primaryDisplay.scaleFactor;
   selectedScreen = primaryDisplay.size;
   const displays = screen.getAllDisplays();
   console.log("Total Displays: ", displays);
@@ -120,7 +126,7 @@ app.whenReady().then(() => {
     console.log("Display added: ", e);
     const displays = screen.getAllDisplays();
     console.log("Total Displays: ", displays.length);
-    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize:{width:1, height:1} }).then((sources) => {
       availableScreens = sources;
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
       createTray();
@@ -163,42 +169,72 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
-  ipcMain.on('mouse-move', (_, data) => {
-    console.log("===Mouse-MOVE===");
-    const { x:cx, y:cy } = data;
-    // console.log("Remote screen: ",clientWidth, clientHeight)
-    let  { width, height }  = selectedScreen;
-    console.log("Selected Screen: ", width, height, scaleFactor)
-    // console.log("Local screen: ", width, height)
-    // const ratioX = width / clientWidth;
-    // const ratioY = height / clientHeight;
-    width = width * scaleFactor;
-    height = height * scaleFactor;
-    console.log("Selected Screen: multiplying scalefactor ", width, height, scaleFactor)
+  ipcMain.on('mouse-down', (_, data) => {
+    try{
+      robot.mouseToggle("down");
+    }catch(e){
+      console.log("Mouse-down: "+e)
+    }
+  });
 
-    // console.log("After Scale: Local screen: ", width, height)
-    const adjustedX =  Math.round(cx * width);
-    const adjustedY = Math.round(cy * height);
-    const x = adjustedX + nativeOrigin.x;
-    const y = adjustedY + nativeOrigin.y;
-    // console.log("recieved X & Y ", x, y);
-    // console.log("adjusted X & Y ", adjustedX, adjustedY);
-    robot.moveMouseSmooth(x, y);
-    console.log("===Mouse-MOVE===")
+  ipcMain.on('mouse-up', (_, data) => {
+    try{
+      robot.mouseToggle("up");
+    }catch(e){
+      console.log("Mouse-up: "+e)
+    }
+  });
+
+  ipcMain.on('mouse-move', (_, data) => {
+    console.log("Mouse move: ", data)
+    try{
+    console.time("Mouse move")
+    const { x:cx, y:cy } = data;
+
+    // if(isDraggable){
+    //   robot.mouseToggle("down");
+
+    // }else{
+    //   robot.mouseToggle("up");
+
+    // }
+    // let  { width, height }  = selectedScreen;
+    // console.log("Selected Screen: ", width, height, scaleFactor)
+
+    // width = width * scaleFactor;
+    // height = height * scaleFactor;
+    // console.log("Selected Screen: multiplying scalefactor ", width, height, scaleFactor)
+
+
+    const x =  Math.round(cx * screenWidth)+ nativeOrigin.x;
+    const y = Math.round(cy * screenHeight) + nativeOrigin.y;
+    // const x = adjustedX 
+    // const y = adjustedY
+
+    robot.moveMouse(x, y);
+    console.timeEnd("Mouse move")
+  }catch(e){
+    console.log("Mouse Move error: ", e);
+  }
 
         // robot.moveMouse(x, y)
   });
 
   ipcMain.on('mouse-click', (_, data) => {
-    const { x, y, button } = data;
-    console.log("Mouse click", x, y, button)
-    // robot.moveMouse(x, y);
-    robot.mouseClick(button === 2 ? 'right' : 'left');
+    try{
+      const { x, y, button } = data;
+      console.log("Mouse click", x, y, button)
+      // robot.moveMouse(x, y);
+      robot.mouseClick(button === 2 ? 'right' : 'left');
+    }catch(e){
+      console.log("Mouse-click: "+e)
+    }
   });
 
   ipcMain.on('key-up', (_, data) => {
-    const { key, code:modifier } = data;
     try{
+    const { key, code:modifier } = data;
+    
      // Map of special keys to their robotjs equivalents
      const specialKeysMap = {
       'Shift': 'shift',
@@ -230,6 +266,8 @@ app.whenReady().then(() => {
     screen.getAllDisplays().forEach(display => {
       if (display.id == data) {
         selectedScreen = display.size;
+        screenHeight = display.size.height * display.scaleFactor;
+        screenWidth = display.size.width * display.scaleFactor;
         scaleFactor = display.scaleFactor;
         nativeOrigin = display.nativeOrigin;
         console.log("Selected Screen: ", selectedScreen);
@@ -238,8 +276,12 @@ app.whenReady().then(() => {
   })
 
   ipcMain.on('mouse-scroll', (_, data) => {
-    const { deltaX, deltaY} = data;
-    robot.scrollMouse(deltaX, deltaY);
+    try{
+      const { deltaX, deltaY} = data;
+      robot.scrollMouse(deltaX, deltaY);
+    }catch(e){
+      console.log("Mouse-scroll: "+e)
+    }
   });
 });
 

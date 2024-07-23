@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, desktopCapturer, Menu, screen, dialog } from 'electron';
+import { app, shell, BrowserWindow, ipcMain, desktopCapturer,  screen, dialog } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
@@ -7,10 +7,10 @@ import robot from "@hurdlegroup/robotjs"
 
 
 
-let availableScreens;
+// let availableScreens;
 let mainWindow;
 let selectedScreen;
-let scaleFactor:number=1;
+// let scaleFactor:number=1;
 let screenHeight:number;
 let screenWidth:number;
 let nativeOrigin = { x: 0, y: 0 };
@@ -75,7 +75,7 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      availableScreens = sources;
+      // availableScreens = sources;
       // console.log("Sources: ", sources[0].thumbnail.toJPEG(100));
 
       // console.log("Available Screens", availableScreens);
@@ -129,15 +129,15 @@ app.whenReady().then(() => {
   screenHeight = height * primaryDisplay.scaleFactor;
   screenWidth = width * primaryDisplay.scaleFactor;
   selectedScreen = primaryDisplay.size;
-  const displays = screen.getAllDisplays();
-  console.log("Total Displays: ", displays);
+  // const displays = screen.getAllDisplays();
+  // console.log("Total Displays: ", displays);
 
-  screen.on('display-added', (e) => {
-    console.log("Display added: ", e);
+  screen.on('display-added', (_) => {
+    // console.log("Display added: ", e);
     const displays = screen.getAllDisplays();
     console.log("Total Displays: ", displays.length);
     desktopCapturer.getSources({ types: ['screen'], thumbnailSize:{width:1, height:1} }).then((sources) => {
-      availableScreens = sources;
+      // availableScreens = sources;
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
       // createTray();
     } );
@@ -148,18 +148,18 @@ app.whenReady().then(() => {
     const displays = screen.getAllDisplays();
     console.log("Total Displays: ", displays.length);
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      availableScreens = sources;
+      // availableScreens = sources;
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));
       // createTray();
     } );
     
   } )
 
-  scaleFactor = primaryDisplay.scaleFactor;
+  // scaleFactor = primaryDisplay.scaleFactor;
   nativeOrigin = primaryDisplay.nativeOrigin;
 
 
-  console.log(`Screen Size: ${width}x${height}`);
+  // console.log(`Screen Size: ${width}x${height}`);
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -179,7 +179,7 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
-  ipcMain.on('mouse-down', (_, data) => {
+  ipcMain.on('mouse-down', (_, __) => {
     try{
       robot.mouseToggle("down");
     }catch(e){
@@ -187,7 +187,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.on('mouse-up', (_, data) => {
+  ipcMain.on('mouse-up', (_, __) => {
     try{
       robot.mouseToggle("up");
     }catch(e){
@@ -196,9 +196,9 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('mouse-move', (_, data) => {
-    console.log("Mouse move: ", data)
+    // console.log("Mouse move: ", data)
     try{
-    console.time("Mouse move")
+    // console.time("Mouse move")
     const { x:cx, y:cy } = data;
 
     // if(isDraggable){
@@ -222,9 +222,9 @@ app.whenReady().then(() => {
     // const y = adjustedY
 
     robot.moveMouse(x, y);
-    console.timeEnd("Mouse move")
+    // console.timeEnd("Mouse move")
   }catch(e){
-    console.log("Mouse Move error: ", e);
+    // console.log("Mouse Move error: ", e);
   }
 
         // robot.moveMouse(x, y)
@@ -267,18 +267,18 @@ app.whenReady().then(() => {
     robot.keyToggle(robotKey, 'up', modifier);
   
     }catch(e){
-      console.log(e)
+      // console.log(e)
     }
   });
 
   ipcMain.on("screen-change", (_, data) => {
-    console.log("Screen Change from FR: ", data)
+    // console.log("Screen Change from FR: ", data)
     screen.getAllDisplays().forEach(display => {
       if (display.id == data) {
         selectedScreen = display.size;
         screenHeight = display.size.height * display.scaleFactor;
         screenWidth = display.size.width * display.scaleFactor;
-        scaleFactor = display.scaleFactor;
+        // scaleFactor = display.scaleFactor;
         nativeOrigin = display.nativeOrigin;
         console.log("Selected Screen: ", selectedScreen);
       }
@@ -290,16 +290,16 @@ app.whenReady().then(() => {
       const { deltaX, deltaY} = data;
       robot.scrollMouse(deltaX, deltaY);
     }catch(e){
-      console.log("Mouse-scroll: "+e)
+      // console.log("Mouse-scroll: "+e)
     }
   });
 });
 
 
 ipcMain.on('confirm-quit', (event, hasActiveConnection) => {
-  console.log("Confirm quit ", hasActiveConnection)
+  // console.log("Confirm quit ", hasActiveConnection)
   if (hasActiveConnection) {
-    console.log("Has active connection")
+    // console.log("Has active connection")
     dialog.showMessageBox(mainWindow!, {
       type: 'question',
       buttons: ['Stay', 'Quit'],
@@ -313,7 +313,7 @@ ipcMain.on('confirm-quit', (event, hasActiveConnection) => {
       }
     });
   } else {
-    console.log("No active connection")
+    // console.log("No active connection")
     isQuitting = true;
     app.quit();
   }

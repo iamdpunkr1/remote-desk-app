@@ -1,7 +1,8 @@
 import { app, shell, BrowserWindow, ipcMain, desktopCapturer,  screen, dialog } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import icon from '../../resources/icon.png?asset';
+// import icon from '../../resources/icon.png?asset';
+import icon from '../../resources/remote-desk-icon.svg?asset';
 import robot from "@hurdlegroup/robotjs"
 
 
@@ -49,8 +50,8 @@ let isQuitting:boolean = false;
 function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    minHeight: 600,
+    minWidth: 800,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -143,10 +144,10 @@ app.whenReady().then(() => {
     } );
   } )
 
-  screen.on('display-removed', (e) => {
-    console.log("Display removed: ", e);
-    const displays = screen.getAllDisplays();
-    console.log("Total Displays: ", displays.length);
+  screen.on('display-removed', (_) => {
+    // console.log("Display removed: ", e);
+    // const displays = screen.getAllDisplays();
+    // console.log("Total Displays: ", displays.length);
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       // availableScreens = sources;
       mainWindow.webContents.send('AVAILABLE_SCREENS', sources.map(source => ({ id: source.id, name: source.name })));

@@ -3,30 +3,8 @@ import io from "socket.io-client";
 import { useRoom } from './context/RoomContext';
 import './App.css';
 import { v4 as uuidv4 } from 'uuid';
-// import { moveCursor } from 'readline';
+// import remote_desk_icon from './assets/remote_desk_icon.svg';
 
-
-// declare global {
-//   interface Window {
-//     electronAPI: {
-//       setSize: (size: { width: number; height: number }) => void;
-//       getScreenId: (callback: (event: any, screenId: string) => void) => void;
-//       getAvailableScreens: (callback: (event: any, screens: any[]) => void) => void;
-//       sendMouseMove: (data: { x: number, y: number }) => void;
-//       sendMouseClick: (data: { x: number, y: number, button: number }) => void;
-//       sendKeyUp: (data: { key: string, code: string }) => void;
-//       sendScreenChange: (data: string) => void;
-//       sendMouseScroll: (data: { deltaX: number, deltaY: number }) => void;
-//       sendMouseDown: (data: boolean) => void;
-//       sendMouseUp: (data: boolean) => void;
-//       onAppClosing: (callback: () => void) => void;
-//       onPerformDisconnect: (callback: () => void) => void;
-//       onQuitCancelled: (callback: () => void) => void;
-//       sendConfirmQuit: (hasActiveConnection: boolean) => void;
-//       sendQuitApp: () => void;
-//     };
-//   }
-// }
 
 type screenType = {
   id:string,
@@ -67,7 +45,7 @@ const Rtc: React.FC = () => {
   // const [isQuitting, setIsQuitting] = useState<boolean>(false);
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const joinedRoomId = useRef<string | null>(null);
-
+  const [error, setError] = useState<string | null>(null);
   // iceServers: [{"urls":"stun:stun.relay.metered.ca:80"},{"urls":"turn:global.relay.metered.ca:80","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turn:global.relay.metered.ca:80?transport=tcp","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turn:global.relay.metered.ca:443","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"},{"urls":"turns:global.relay.metered.ca:443?transport=tcp","username":"3e2ccebf3fdd5a1c83bc7a32","credential":"3oLWpjBdOIDoqMOh"}],
 
   const rtcPeerConnection = useRef<RTCPeerConnection | null>(new RTCPeerConnection({
@@ -340,6 +318,27 @@ const Rtc: React.FC = () => {
       setIsOnline(true);
     });
 
+    socket.on("disconnect", () => {
+      console.log("Disconnected from server");
+      setIsOnline(false);
+    });
+
+    socket.on("reconnect", () => {
+      console.log("Reconnected to server");
+      setIsOnline(true);
+    });
+
+    socket.on("reconnect_error", () => {
+      console.log("Reconnect error");
+      setIsOnline(false);
+
+    });
+
+    socket.on("connect_error", () => {
+      console.log("Connect error");
+      setIsOnline(false);
+    });
+
     
   
 
@@ -357,7 +356,14 @@ const Rtc: React.FC = () => {
       }
     });
 
-    socket.on("user-joined",async (roomId)=>{
+    socket.on("room-not-found", (roomId) => {
+      console.log("Room not found: ", roomId);
+      setError("Remote PC not found");
+      setLoading(false);
+
+    });
+
+    socket.on("screen-share",async (roomId)=>{
       setRoomId(roomId);
 
     console.log("availableScreens", availableScreensRef.current);
@@ -563,11 +569,17 @@ const Rtc: React.FC = () => {
     
   // };
   const MAX_RETRIES = 3;
-  const RETRY_DELAY = 2000;
+  const RETRY_DELAY = 5000;
   
   const handleJoinRoom = async (retryCount = 0) => {
+    if(joinRoomId.trim() ===  roomId){
+      setError("You can't join your own room");
+      return;
+    }
+
+    setError(null);
     setLoading(true);
-    console.log("Join Room ID: ", joinRoomId);
+    // console.log("Join Room ID: ", joinRoomId);
     joinedRoomId.current = joinRoomId;
     if (joinRoomId.trim()) {
       try {
@@ -583,7 +595,7 @@ const Rtc: React.FC = () => {
         };
         dataChannel.current.onmessage = handleDataChannelMessage;
   
-        socket.emit("join-room", joinRoomId);
+        socket.emit("screen-share", joinRoomId);
   
         // Wait for ICE candidates to be gathered
         await gatherIceCandidates(rtcPeerConnection.current);
@@ -601,7 +613,7 @@ const Rtc: React.FC = () => {
             } else if (rtcPeerConnection.current?.connectionState === 'failed') {
               reject(new Error('Connection failed'));
             } else {
-              setTimeout(checkState, 1000);
+              setTimeout(checkState, 5000);
             }
           };
           checkState();
@@ -610,16 +622,17 @@ const Rtc: React.FC = () => {
         // setLoading(false);
         setRoomId(joinRoomId);
       } catch (error) {
-        console.error('Connection error:', error);
+        console.log('Connection error:', error);
         if (retryCount < MAX_RETRIES) {
           console.log(`Retrying... Attempt ${retryCount + 1} of ${MAX_RETRIES}`);
           setTimeout(() => handleJoinRoom(retryCount + 1), RETRY_DELAY);
         } else {
           setLoading(false);
-          console.error('Max retries reached. Connection failed.');
+          console.log('Max retries reached. Connection failed.');
         }
       }
     }
+    setJoinRoomId('');
   };
 
   const handleCopyRoomId = () => {
@@ -727,6 +740,7 @@ const Rtc: React.FC = () => {
   //   socket.emit('join-room', newRoomID);
   // };
   const handleDisconnect = async () => {
+    console.log("handleDisconnect called");
     // Close the existing RTC peer connection
     if (rtcPeerConnection.current) {
       rtcPeerConnection.current.close();
@@ -735,6 +749,8 @@ const Rtc: React.FC = () => {
     // Reset connection state and related states
     setConnectionState('disconnected');
     setTrackReceived(false);
+    // availableScreensRef.current = [];
+    setScreensRecieved([]);
   
     // Generate a new room ID
     const newRoomID = uuidv4().slice(0, 8);
@@ -780,6 +796,17 @@ const Rtc: React.FC = () => {
         <button onClick={()=>handleJoinRoom()} className='bg-indigo-500 hover:bg-indigo-700 text-white px-2 py-1 rounded-md mr-2'>
           Retry
         </button>
+        <button onClick={()=>handleDisconnect()} className='bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
+             <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="#fff"
+                stroke="#fff"
+                viewBox="0 0 1024 1024"
+                className='w-5 h-5'
+              >
+                <path d="M195.2 195.2a64 64 0 0 1 90.496 0L512 421.504 738.304 195.2a64 64 0 0 1 90.496 90.496L602.496 512 828.8 738.304a64 64 0 0 1-90.496 90.496L512 602.496 285.696 828.8a64 64 0 0 1-90.496-90.496L421.504 512 195.2 285.696a64 64 0 0 1 0-90.496z" />
+              </svg>  
+        </button>
         
       </div>
     }
@@ -807,14 +834,18 @@ const Rtc: React.FC = () => {
       <div className="animate-spin rounded-full h-28 w-28 border-8 border-dashed border-indigo-500"></div>
     </div> :
     <>
+      <div className="flex justify-center items-center">
+        {/* <img src={remote_desk_icon} alt="React Desk" className="w-28 h-28" /> */}
+        <h1 className="text-2xl font-bold text-indigo-600 italic pb-8">Remote Desk</h1>
+      </div>
       {
         isOnline?
-        <span className="inline-flex items-center bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
+        <span className="my-4 inline-flex items-center bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
                 <span className="w-2 h-2 me-1 bg-green-500 rounded-full"></span>
                 online
       </span>
         :
-      <span className="inline-flex items-center bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-red-900 dark:text-red-300">
+      <span className="my-4 inline-flex items-center bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full dark:bg-red-900 dark:text-red-300">
                 <span className="w-2 h-2 me-1 bg-red-500 rounded-full"></span>
                 offline
       </span>
@@ -855,7 +886,7 @@ const Rtc: React.FC = () => {
             value={joinRoomId}
             onChange={(e) => setJoinRoomId(e.target.value)}
             placeholder="Enter Remote ID"
-            className='focus:outline-none  text-indigo-600 focus:border-indigo-700 border-solid border-2 border-gray-400 rounded-md px-2 py-1 bg-trasparent w-64 text-sm'
+            className={`focus:outline-none  text-indigo-600 focus:border-indigo-700 border-solid border-2 ${error? "border-red-400":"border-gray-400"} rounded-md px-2 py-1 bg-trasparent w-64 text-sm`}
           />
           <button onClick={()=> handleJoinRoom()} className='hover:bg-indigo-500 hover:border-indigo-500 bg-indigo-700 border-solid border-[2px] border-indigo-700 rounded-r-md px-2 py-1  absolute -right-1 top-0'>
              
@@ -877,6 +908,9 @@ const Rtc: React.FC = () => {
           </button>
         </div>
       </div>
+       <div className='mt-4'>
+        {error && <p className='text-red-500 text-xs'>{error}</p>}
+       </div>
     </>  
     )        
     }
@@ -893,6 +927,7 @@ const Rtc: React.FC = () => {
       <div className='flex gap-4'>
         <h6>Connected, Your screen is being shared</h6>
         <button onClick={handleDisconnect}
+                title='Disconnect'
                 className=' bg-red-500 hover:bg-red-700 text-white px-2 py-1 rounded-md'>
                 <svg
                 xmlns="http://www.w3.org/2000/svg"

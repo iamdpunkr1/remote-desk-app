@@ -196,7 +196,7 @@ const App: React.FC = () => {
       console.log("Room ID:", roomId);
       console.log("Connection State:", connectionState);
 
-      availableScreensRef.current = screens;
+      availableScreensRef.current = screens; 
       setSelectedScreen(screens[0].id);
       if(screens.length > 0 && roomId){
         console.log("Available screens emitted to SOCKET: ", screens);
@@ -204,7 +204,7 @@ const App: React.FC = () => {
       }
     });
 
-    socket.on("user-joined",async (roomId)=>{
+    socket.on("screen-share",async (roomId)=>{
       setRoomId(roomId);
       // window.electronAPI.getScreenId((_, screenId) => {
       //   console.log('Renderer...', screenId);

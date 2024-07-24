@@ -5,6 +5,7 @@ import { Server as SocketIOServer, Socket } from "socket.io";
 import { createServer, Server as HTTPServer } from "http";
 import { configDotenv } from 'dotenv';
 
+
 configDotenv({
     path: "./.env"
 });
@@ -48,6 +49,8 @@ app.get('/logs', (req: Request, res: Response) => {
   res.status(200).json({ logs });
 });
 
+const room = new Map();
+
 const server: HTTPServer = createServer(app);
 const io: SocketIOServer = new SocketIOServer(server, {
   cors: {
@@ -68,8 +71,22 @@ io.on('connection', (socket: Socket) => {
 
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
+    room.set(roomId, socket.id);
     addLog(`User joined in a room: ${roomId}`);
-    socket.broadcast.to(roomId).emit('user-joined', roomId);
+    // socket.broadcast.to(roomId).emit('user-joined', roomId);
+  });
+
+  socket.on("screen-share", (roomId) => {
+    addLog(`Screen share started for room: ${roomId}`);
+    if(room.has(roomId)) {
+      socket.join(roomId);
+      const socketId = room.get(roomId);
+      socket.to(socketId).emit('screen-share',roomId);
+    }else{
+      addLog(`Room not found: ${roomId}`);
+      socket.emit('room-not-found', roomId);
+    }
+    
   });
 
   socket.on("screen-data", function(data) {
@@ -133,6 +150,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on("leave-room", (roomId) => {
     socket.leave(roomId);
+    room.delete(roomId);
     addLog(`User left the room: ${roomId}`);
     socket.broadcast.to(roomId).emit('user-left', roomId);
   });

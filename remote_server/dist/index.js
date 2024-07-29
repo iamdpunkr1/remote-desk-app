@@ -41,6 +41,7 @@ app.get('/view', (req, res) => {
 app.get('/logs', (req, res) => {
     res.status(200).json({ logs });
 });
+const room = new Map();
 const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
     cors: {
@@ -54,10 +55,45 @@ io.on('connection', (socket) => {
     socket.on("electron-app", (data) => {
         addLog(`Electron App text: ${data}`);
     });
-    socket.on("join-room", (roomId) => {
-        socket.join(roomId);
-        addLog(`User joined in a room: ${roomId}`);
-        socket.broadcast.to(roomId).emit('user-joined', roomId);
+    socket.on("join-room", (roomId, id = "") => {
+        if (room.has(roomId)) {
+            addLog(`Second user to room: ${roomId}`);
+            // socket.emit('room-exists', roomId);
+            const socketId = room.get(roomId);
+            if (id === socketId) {
+                addLog('id matched');
+                socket.join(roomId);
+                io.to(socketId).emit('get-offer', roomId);
+            }
+        }
+        else {
+            socket.join(roomId);
+            room.set(roomId, socket.id);
+            addLog(`User joined in a room: ${roomId}`);
+        }
+        // socket.broadcast.to(roomId).emit('user-joined', roomId);
+    });
+    socket.on("request-screen-share", (roomId, hostname) => {
+        addLog(`Screen share requested for room: ${roomId}, hostname: ${hostname}`);
+        if (room.has(roomId)) {
+            // socket.join(roomId);
+            const socketId = room.get(roomId);
+            socket.to(socketId).emit('screen-share-request', socket.id, hostname);
+        }
+        else {
+            addLog(`Room not found: ${roomId}`);
+            socket.emit('room-not-found', roomId);
+        }
+    });
+    socket.on("screen-share-response", (roomId, accepted, requesterId) => {
+        if (accepted) {
+            addLog(`Screen share accepted for room: ${roomId}`);
+            io.to(requesterId).emit('screen-share-accepted', roomId, socket.id);
+        }
+        else {
+            addLog(`Screen share denied for room: ${roomId}`);
+            io.to(requesterId).emit('screen-share-denied', roomId);
+        }
     });
     socket.on("screen-data", function (data) {
         data = JSON.parse(data);
@@ -67,11 +103,12 @@ io.on('connection', (socket) => {
         addLog(`Screen data received for room: ${room}`);
     });
     socket.on('offer', (sdp, roomId) => {
-        addLog('Routing offer' + roomId);
+        // socket.join(roomId);
+        addLog('Routing offer: ' + roomId);
         socket.broadcast.to(roomId).emit('offer', sdp, roomId);
     });
     socket.on('answer', (sdp, roomId) => {
-        addLog('Routing answer ' + roomId);
+        addLog('Routing answer: ' + roomId);
         socket.broadcast.to(roomId).emit('answer', sdp);
     });
     socket.on('icecandidate', (icecandidate, roomId) => {
@@ -108,6 +145,7 @@ io.on('connection', (socket) => {
     });
     socket.on("leave-room", (roomId) => {
         socket.leave(roomId);
+        room.delete(roomId);
         addLog(`User left the room: ${roomId}`);
         socket.broadcast.to(roomId).emit('user-left', roomId);
     });

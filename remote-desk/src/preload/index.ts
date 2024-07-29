@@ -13,6 +13,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('api', api);
     contextBridge.exposeInMainWorld('electronAPI', {
       setSize: (size) => ipcRenderer.send('set-size', size),
+      getHostName: (callback) => ipcRenderer.on('HOSTNAME', callback),
       getScreenId: (callback) => ipcRenderer.on('SET_SOURCE_ID', callback),
       getAvailableScreens: (callback) => ipcRenderer.on('AVAILABLE_SCREENS', callback),
       sendMouseMove: (data) => ipcRenderer.send('mouse-move', data),

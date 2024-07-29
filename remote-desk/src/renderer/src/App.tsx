@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 declare global {
   interface Window {
     electronAPI: {
+      getHostName(arg0: (_: any, hostName: any) => void): unknown;
       onQuitCancelled(arg0: () => void): unknown;
       onPerformDisconnect(handleForcedDisconnect: () => void): unknown;
       onAppClosing(handleAppClosing: () => void): unknown;
@@ -410,13 +411,6 @@ const App: React.FC = () => {
       rtcPeerConnection.current.close();
       rtcPeerConnection.current = null;
       createPeerConnection();
-      // rtcPeerConnection.current = new RTCPeerConnection({
-      //   iceServers: [
-      //     { urls: 'stun:stun1.l.google.com:19302' },
-      //     { urls: 'stun:stun3.l.google.com:19302' },
-      //     { urls: 'stun:stun4.l.google.com:19302' }
-      //   ],
-      // }) 
     }
   
     // Reset connection state and any related states

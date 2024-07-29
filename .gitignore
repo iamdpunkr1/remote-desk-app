@@ -1,3 +1,4 @@
 /remote_server/node_modules
 /remote-desk/node_modules
 .vercel
+/remote-desk/dist

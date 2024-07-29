@@ -6,6 +6,7 @@ declare global {
     api: unknown
     electronAPI: {
       setSize: (size: { width: number; height: number }) => void;
+      getHostName: (callback: (event: any, hostName: string) => void) => void;  
       getScreenId: (callback: (event: any, screenId: string) => void) => void;
       getAvailableScreens: (callback: (event: any, screens: any[]) => void) => void;
       sendMouseMove: (data: { x: number, y: number }) => void;
